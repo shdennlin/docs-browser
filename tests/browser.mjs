@@ -752,6 +752,29 @@ checks['AC-75'] = async (cdp) => {
     const afterReset = await q("({wrap:getComputedStyle(document.querySelector('#tree a')).whiteSpace, max:getComputedStyle(document.getElementById('preview')).maxWidth, ls:localStorage.getItem('docs-browser.fullWidth')})");
     await p.key('Escape', 'Escape', 27);
     const closed = await q("document.getElementById('settings').hidden");
+    // folder icons: a closed and an open one
+    const icons = await q("(function(){var d=document.querySelector('#tree details[data-dir=\"docs\"]');var s=d.querySelector('summary');var m=function(){var c=getComputedStyle(s,'::before');return (c.maskImage&&c.maskImage!=='none'?c.maskImage:c.webkitMaskImage)||'none'};var o=d.open;d.open=false;var closed=m();d.open=true;var open=m();d.open=o;return {closedSet:closed!=='none',differs:closed!==open,w:getComputedStyle(s,'::before').width}})()");
+    // outline colours (dark) and the highlighted section while scrolling
+    await p.media('dark');
+    await p.goto('/?file=docs/outline.md'); await p.ready();
+    const colours = await q("Array.from(document.querySelectorAll('#outline a')).slice(0,3).map(function(a){return a.className+':'+getComputedStyle(a).color})");
+    const heads = await q("Array.from(document.querySelectorAll('#preview h1[id],#preview h2[id],#preview h3[id]')).length");
+    await q("(function(){var h=document.querySelectorAll('#preview h2[id]')[2]; var m=document.getElementById('main'); m.scrollTop = h.getBoundingClientRect().top - m.getBoundingClientRect().top + m.scrollTop; return true})()");
+    await sleep(150);
+    const spy = await q("(function(){var c=document.querySelectorAll('#outline a.current');var hs=document.querySelectorAll('#preview h2[id]');return {n:c.length,text:c[0]&&c[0].textContent,want:hs[2].textContent}})()");
+    await p.media('light');
+    // nowrap + narrow list: selecting a wide name must not scroll the list sideways
+    await q("localStorage.setItem('docs-browser.sidebarWidth','180'); localStorage.setItem('docs-browser.wrapNames','0'); true");
+    await p.goto('/?file=README.md'); await p.ready();
+    await q("document.getElementById('sidebar').style.fontSize = '26px'; true"); // make the rows wider than the list
+    // a real mouse click, as a user does, on the visible part of the row
+    await q("document.querySelector('#tree details[data-dir=\"docs\"]').open = true; true");
+    const pt = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');a.scrollIntoView({block:'center'});document.getElementById('sidebar').scrollLeft=0;var r=a.getBoundingClientRect();var s=document.getElementById('sidebar').getBoundingClientRect();return {x:Math.min(r.left+60,s.right-30),y:r.top+r.height/2}})()");
+    await p.mouse('mousePressed', pt.x, pt.y); await p.mouse('mouseReleased', pt.x, pt.y);
+    await sleep(400);
+    const dbg = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]').getBoundingClientRect();var s=document.getElementById('sidebar');return {linkW:Math.round(a.width),linkL:Math.round(a.left),vw:s.clientWidth,sw:s.scrollWidth}})()");
+    const side = await q("({sl:document.getElementById('sidebar').scrollLeft, wide:document.getElementById('sidebar').scrollWidth > document.getElementById('sidebar').clientWidth, tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left - document.getElementById('sidebar').getBoundingClientRect().left)})");
+    await q("localStorage.clear(); true");
     // HTML fills the right panel
     await p.goto('/?file=docs/flow.html'); await p.ready();
     await waitFor(() => p.ev("!!document.querySelector('iframe.html-frame')"), 5000, 50);
@@ -760,8 +783,10 @@ checks['AC-75'] = async (cdp) => {
       && pinned === 'block' && hashAfter.length > 1 && docsOpen === true && docsClosed === 0
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
+      && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
+      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, full })];
+    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, colours, spy, side, dbg, icons, full })];
   } finally { await p.close(); }
 };
 

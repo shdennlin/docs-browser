@@ -237,7 +237,14 @@
     });
     if (link) {
       link.classList.add('selected');
-      if (state.mode === 'names') link.scrollIntoView({ block: 'nearest' });
+      if (state.mode === 'names') {
+        // Vertical only: scrollIntoView would also scroll the list sideways when names do not wrap.
+        var sb = $('#sidebar');
+        var top = sb.getBoundingClientRect().top + $('#toolbar').offsetHeight;
+        var lr = link.getBoundingClientRect();
+        if (lr.top < top) sb.scrollTop -= top - lr.top + 4;
+        else if (lr.bottom > sb.getBoundingClientRect().bottom) sb.scrollTop += lr.bottom - sb.getBoundingClientRect().bottom + 4;
+      }
     }
   }
 
@@ -603,7 +610,23 @@
       a.textContent = h.textContent;
       outlineEl.appendChild(a);
     });
+    markCurrentHeading();
   }
+  function markCurrentHeading() {
+    var links = outlineEl.querySelectorAll('a');
+    if (!links.length) return;
+    var limit = $('#main').getBoundingClientRect().top + 48;
+    var current = -1;
+    var heads = els.preview.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
+    for (var i = 0; i < heads.length; i++) { if (heads[i].getBoundingClientRect().top <= limit) current = i; else break; }
+    if (current < 0) current = 0;
+    Array.prototype.forEach.call(links, function (a, i) { a.classList.toggle('current', i === current); });
+  }
+  var spyFrame = 0;
+  $('#main').addEventListener('scroll', function () {
+    if (spyFrame) return;
+    spyFrame = requestAnimationFrame(function () { spyFrame = 0; markCurrentHeading(); });
+  });
   var outlineTimer = null;
   new MutationObserver(function () { clearTimeout(outlineTimer); outlineTimer = setTimeout(updateOutline, 0); })
     .observe(els.preview, { childList: true });

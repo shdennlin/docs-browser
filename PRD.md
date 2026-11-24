@@ -26,6 +26,7 @@
 | v1.4.16 (2026-11-24) | Added on request: Dracula theme in dark mode (page, Markdown, code, Mermaid, rainbow headings), `MD`/`HTML` badges, expand/collapse all, file name filter and full-text search (`GET /api/search`, 7.3, 11), default port 4747 instead of 3000 (4 browser ACs, 2 unit tests, T-3.6) |
 | v1.4.17 (2026-11-25) | Release 0.1.3: includes everything of v1.4.14 to v1.4.16 (sidebar, theme, search, badges, expand/collapse, default port 4747); `Cargo.toml` and the README install tag updated |
 | v1.4.18 (2026-11-25) | Added on request: per-folder expand/collapse buttons, wrap toggle, HTML fills the right panel, floating outline, settings dialog (7.3, 7.4; AC-75, T-3.7) |
+| v1.4.19 (2026-11-25) | Outline entries use the heading colours and the current section is highlighted; folder icons; fix: selecting a file no longer scrolls the list sideways when names do not wrap (7.3, 7.4; AC-75) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -292,11 +293,12 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 - `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
 - Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
 - Each folder shows two small buttons on hover: `⊞` opens the folder and everything inside it, `⊟` closes them. Clicking a button does not toggle the folder itself.
-- A `Wrap` button switches long names between wrapping and one line per name with sideways scrolling.
+- A `Wrap` button switches long names between wrapping and one line per name with sideways scrolling. Selecting a file only scrolls the list vertically (never sideways), and the search box and buttons stay in view while the list is scrolled sideways.
+- Each folder has a small icon, closed or open.
 
 ### 7.4 Outline and settings
 
-- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level); clicking a heading scrolls to it and sets the `#hash`. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
+- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted); clicking a heading scrolls to it and sets the `#hash`. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. There is no theme choice: the theme follows the system.
 
@@ -718,7 +720,7 @@ site/
 | AC-72 | M3 | §7.3 badges, expand/collapse | Browser `/`: read the badges, click `Collapse all`, `Expand all`, `Collapse all` | `README.md` and Markdown files read `MD`, `docs/flow.html` reads `HTML`; the open folders go to 0, to all of them, to 0 |
 | AC-73 | M3 | §7.3 name filter | Browser: type `DOCS/ARCH`, `docs flow`, `zzzz-nothing`, then clear; press `/` | Only `docs/architecture.md` with its folder open; only `docs/flow.html`; "No file name matches"; the full list returns with the folders closed again; the box has focus after `/` |
 | AC-74 | M3 | §7.3, §11 content search | Browser, `Contents` switch: type `x`, `ZEBRA-needle`, click the result, type a text nobody has; `fetch('/api/search?q=a')`, `fetch('/api/search?q=hidden')` | "at least 2 characters"; one result `docs/search-target.md`, line `3:`, hit `zebra-needle`, tree hidden; the preview opens and the URL is `?file=docs/search-target.md`; "No file contains"; status `400`; nothing from `.hidden/` |
-| AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin); a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
+| AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin), `Section n` entries in the heading colours with exactly one highlighted: the section scrolled to; a folder icon differs between open and closed; with `Wrap` off and a 180 px list, selecting a wide row leaves the list at `scrollLeft` 0 and the toolbar in place; a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security

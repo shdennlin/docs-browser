@@ -91,6 +91,13 @@ This line has the unique word zebra-needle-42 inside it.
 
 Another line without it.
 MD
+{
+  echo '# Outline page'
+  for i in 1 2 3 4; do
+    echo; echo "## Section $i"; echo
+    for j in $(seq 1 40); do echo "Line $j of section $i."; echo; done
+  done
+} > docs/outline.md
 cat > docs/code.md <<'MD'
 # Code sample
 
