@@ -59,6 +59,16 @@
         <button id="settings-reset" type="button">Reset to defaults</button>
       </div>
     </div>
+    <div id="diagram-view" role="dialog" aria-modal="true" aria-label="Diagram, full screen" hidden>
+      <div id="diagram-bar">
+        <button id="diagram-out" type="button" aria-label="Zoom out" title="Zoom out (-)">&minus;</button>
+        <span id="diagram-zoom" aria-live="off">100%</span>
+        <button id="diagram-in" type="button" aria-label="Zoom in" title="Zoom in (+)">+</button>
+        <button id="diagram-fit" type="button" title="Fit to screen (0)">Fit</button>
+        <button id="diagram-close" type="button" aria-label="Close diagram" title="Close (Esc)">&times;</button>
+      </div>
+      <div id="diagram-stage"><div id="diagram-pan"></div></div>
+    </div>
     <div id="shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" hidden>
       <div id="shortcuts-card">
         <div id="shortcuts-head"><h2 id="shortcuts-title">Keyboard shortcuts</h2><button id="shortcuts-close" type="button" aria-label="Close shortcuts">&times;</button></div>

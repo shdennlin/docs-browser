@@ -42,6 +42,7 @@
 | v1.4.32 (2026-11-25) | The active tab is marked by an underline (reference look) and idle tabs hide their `×`; a `?` shortcuts button at the bottom left of the list (7.3, 7.5; AC-83) |
 | v1.4.33 (2026-11-25) | Release 0.1.4: includes everything of v1.4.18 to v1.4.32 (Mermaid contrast, fuzzy file name search, copy file name, dead contents links, tabs and keyboard shortcuts, light/dark toggle, bottom bar, settings dialog and the other list and outline refinements); the Linux container suite passes all 101 rows; `Cargo.toml` and the README install tag updated |
 | v1.4.34 (2026-11-25) | Dark Mermaid: every plain flowchart node and every sequence-diagram participant gets its own Dracula accent (tinted fill, accent border); nodes the diagram styled itself and the light theme are unchanged (7.4; AC-84; AC-80 no longer expects plain nodes to share one colour) |
+| v1.4.35 (2026-11-25) | Full-screen Mermaid viewer: a button on every diagram opens it over the page; drag pans, the wheel zooms around the pointer, `Esc` closes (7.4; AC-85) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -320,6 +321,8 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 - **Copy file name:** while a file is open, a `❐` button at the top right, left of the outline button, copies the file name (the last part of the path, for example `rel.md`) to the clipboard and shows `✓` for about a second. It is also there for HTML pages and absent when no file is open.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button in the bar at the bottom of the file list opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
+
+- **Full-screen diagram:** every rendered Mermaid diagram has a small `⤢` button at its top right (dimmed, full strength on hover or focus). It opens a copy of the diagram over the whole page, fitted to the window (at most 400 %). Dragging with the left mouse button pans; the mouse wheel (or a trackpad pinch) zooms around the pointer, so the point under the pointer stays under it; the zoom stays between 5 % and 2000 %. A bar at the top right has `−`, the zoom level, `+`, `Fit` and `×`; a double click and the key `0` also fit, `+` and `-` zoom. `Esc` or `×` closes it; while it is open the other page shortcuts are ignored. Diagrams that failed to render have no button. The copy keeps the diagram's colours.
 
 The server searches on demand, with no index. It walks the listed `.md`, `.markdown`, `.html` and `.htm` files, resolving every one through the resolver (§12.2) with the `/files/*` rules, so hidden folders, the ignore list, out-of-root symlinks and other extensions are never searched. A file reachable through several in-root symlinks is searched once, under its first listed path. Matching is a plain substring test per line, ignoring ASCII case (other letters are matched exactly). HTML is searched by its text with the tags removed. Limits: query 2 to 200 characters, files over 5 MiB skipped, at most 100 result files, 3 lines per file, 256 MiB read per search; hitting a limit sets `truncated`.
 
@@ -754,6 +757,7 @@ site/
 | AC-82 | M3 | §7.5 shortcuts | Browser `/?file=docs/outline.md`: `/`, `Cmd K`, `Ctrl K`, `d` inside the search box, `j` `j` `k` `G` `g`, `o` twice, `d` twice, `c`, `[` `]` with two tabs, `Alt W`, `?`, `j` while the dialog is open, `Escape` | The search box gets focus each time; typing `d` in it changes nothing; the page scrolls 80, 160, 80 px, then to the bottom and top; the outline button toggles; the theme switches to Dracula and back; `outline.md` is copied; `[` and `]` change the tab; `Alt W` closes one; the dialog lists at least 9 rows, ignores `j` and closes on `Escape` |
 | AC-83 | M3 | §7.3 layout | Browser `/?file=README.md`: measure the theme button, the settings button, the `Names`/`Contents` switch and the list controls | Theme and settings buttons are in the bottom bar and not in the toolbar; the switch lies inside the search box at its right end (the box has room for it); the list controls are three buttons and do not include the switch; the bottom bar starts with the `?` button (leftmost, at the left and bottom edge of the list), which opens the shortcuts dialog and `Escape` closes it; with two tabs open the active one has a bottom accent line and a lighter background and shows its `×`, the other has no shadow and a hidden `×` |
 | AC-84 | M3 | §7.4 Mermaid colours | Browser `docs/palette.md` (a flowchart with three plain nodes and one `style` node, and a three-participant sequence diagram) in dark and in light mode | Dark: the three plain nodes have three different fills; the `style` node keeps its own fill; each participant has one fill and border colour on both its top and bottom box, different from the other participants; every node text has contrast >= 4.5. Light: plain nodes keep the single theme fill; participants keep the theme's own distinct colours |
+| AC-85 | M3 | §7.4 full-screen diagram | Browser `docs/palette.md` (two diagrams): click the button of the first; wheel up at a point, wheel down, 40 wheel-ups, 80 wheel-downs; `Fit`; drag by (120, -80) px; keys `+`, `0`, `d`, `Escape`; open the second, click `×` | There is one button per diagram and the viewer is closed at first; it opens with the whole diagram inside the window; the zoom grows on wheel up and the diagram point under the pointer does not move (within 1 % of the size); it shrinks on wheel down; it never exceeds 2000 % nor goes below 5 %; `Fit` restores the first zoom; the drag moves the diagram by the same distance without changing its size; `+` zooms, `0` fits, `d` does not switch the theme; `Escape` closes and empties the viewer; the second diagram opens its own copy (3 participants) and `×` closes it |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -863,6 +867,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.5 tabs and shortcuts | AC-81, AC-82 |
 | §7.3 sidebar layout | AC-83 |
 | §7.4 Mermaid colours (dark) | AC-84 |
+| §7.4 full-screen diagram | AC-85 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -975,6 +980,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.12 | Mermaid text contrast per node (added on request) | T-3.11 | AC-80 |
 | T-3.13 | In-page tabs and keyboard shortcuts; theme/settings bar at the bottom, scope switch in the search box (added on request) | T-3.12 | AC-81, AC-82, AC-83 |
 | T-3.14 | Dark Mermaid: a distinct Dracula accent per plain node and per participant (added on request) | T-3.13 | AC-84 |
+| T-3.15 | Full-screen Mermaid viewer with drag and wheel zoom (added on request) | T-3.14 | AC-85 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

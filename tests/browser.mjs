@@ -1031,6 +1031,74 @@ checks['AC-84'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-85: full-screen Mermaid viewer (button, drag to pan, wheel to zoom, Escape to close)
+checks['AC-85'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/?file=docs/palette.md'); await p.ready();
+    await waitFor(() => p.ev("document.querySelectorAll('#preview .mermaid').length >= 2"), 10000, 100);
+    await sleep(200);
+    const r = {};
+    r.buttons = await q("document.querySelectorAll('#preview .mermaid .mermaid-zoom').length");
+    r.closedAtFirst = await q("document.getElementById('diagram-view').hidden");
+    await q("document.querySelector('#preview .mermaid .mermaid-zoom').click()");
+    await sleep(150);
+    const rect = () => q(`(function(){var b=document.querySelector('#diagram-pan svg').getBoundingClientRect();return {l:b.left,t:b.top,w:b.width,h:b.height}})()`);
+    const scale = () => q("parseFloat(document.getElementById('diagram-view').dataset.scale)");
+    const view = await q("({w:innerWidth,h:innerHeight})");
+    r.open = !(await q("document.getElementById('diagram-view').hidden"));
+    const a = await rect(); const s0 = await scale();
+    r.fits = a.l >= 0 && a.t >= 0 && a.l + a.w <= view.w && a.t + a.h <= view.h && a.w > 100;
+    r.label = await q("document.getElementById('diagram-zoom').textContent");
+    // wheel zooms around the pointer: the point of the diagram under the pointer stays under it
+    const cx = a.l + a.w * 0.25, cy = a.t + a.h * 0.5;
+    await p.mouse('mouseWheel', cx, cy, { deltaX: 0, deltaY: -300, buttons: 0 });
+    await sleep(100);
+    const b = await rect(); const s1 = await scale();
+    r.zoomIn = s1 > s0 * 1.3;
+    r.anchored = Math.abs(((cx - a.l) / a.w) - ((cx - b.l) / b.w)) < 0.01 && Math.abs(((cy - a.t) / a.h) - ((cy - b.t) / b.h)) < 0.01;
+    await p.mouse('mouseWheel', cx, cy, { deltaX: 0, deltaY: 600, buttons: 0 });
+    await sleep(100);
+    r.zoomOut = (await scale()) < s1;
+    for (let i = 0; i < 40; i++) await p.mouse('mouseWheel', cx, cy, { deltaX: 0, deltaY: -800, buttons: 0 });
+    await sleep(100);
+    r.maxClamped = (await scale()) <= 20.0001;
+    for (let i = 0; i < 80; i++) await p.mouse('mouseWheel', cx, cy, { deltaX: 0, deltaY: 800, buttons: 0 });
+    await sleep(100);
+    r.minClamped = (await scale()) >= 0.0499;
+    await q("document.getElementById('diagram-fit').click()"); await sleep(100);
+    const c = await rect(); r.fitBack = Math.abs((await scale()) - s0) < 1e-6;
+    // drag pans by the pointer movement without changing the zoom
+    const sx = view.w / 2, sy = view.h - 60;
+    await p.mouse('mousePressed', sx, sy);
+    for (const k of [0.3, 0.7, 1]) await p.mouse('mouseMoved', sx + 120 * k, sy - 80 * k);
+    await p.mouse('mouseReleased', sx + 120, sy - 80);
+    await sleep(100);
+    const d = await rect();
+    r.dragged = Math.abs((d.l - c.l) - 120) < 2 && Math.abs((d.t - c.t) + 80) < 2 && Math.abs(d.w - c.w) < 0.5;
+    // keys while open: + zooms, 0 fits, a page shortcut (d = theme) is ignored, Escape closes only the viewer
+    const theme0 = await q("document.documentElement.dataset.theme || ''");
+    await p.key('+', 'Equal', 187); await sleep(60);
+    r.plusKey = (await scale()) > s0;
+    await p.key('0', 'Digit0', 48); await sleep(60);
+    r.zeroKey = Math.abs((await scale()) - s0) < 1e-6;
+    await p.key('d', 'KeyD', 68); await sleep(60);
+    r.pageKeysIgnored = (await q("document.documentElement.dataset.theme || ''")) === theme0;
+    await p.key('Escape', 'Escape', 27); await sleep(100);
+    r.closedByEscape = await q("document.getElementById('diagram-view').hidden && document.getElementById('diagram-pan').children.length === 0");
+    // the second diagram opens its own copy, the close button works, a click on the page behind does nothing
+    await q("document.querySelectorAll('#preview .mermaid .mermaid-zoom')[1].click()"); await sleep(150);
+    r.second = await q("document.querySelectorAll('#diagram-pan svg rect.actor').length >= 3");
+    await q("document.getElementById('diagram-close').click()"); await sleep(80);
+    r.closedByButton = await q("document.getElementById('diagram-view').hidden");
+    const ok = r.buttons === 2 && r.closedAtFirst && r.open && r.fits && /%$/.test(r.label) && r.zoomIn && r.anchored
+      && r.zoomOut && r.maxClamped && r.minClamped && r.fitBack && r.dragged && r.plusKey && r.zeroKey
+      && r.pageKeysIgnored && r.closedByEscape && r.second && r.closedByButton;
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
 // ---- AC-81: in-page tabs
 checks['AC-81'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=README.md');

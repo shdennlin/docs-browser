@@ -443,6 +443,19 @@
     });
   }
 
+  // Full-screen diagram viewer (PRD 7.4): a button on each diagram opens a copy of its SVG over the page.
+  // Drag pans, the wheel zooms around the pointer, Escape closes.
+  var ICON_ZOOM = SVG_OPEN.replace('width="14" height="14"', 'width="15" height="15"') + '<path d="M9.5 2.5h4v4"/><path d="M6.5 13.5h-4v-4"/><path d="M13.5 2.5 9 7"/><path d="M2.5 13.5 7 9"/></svg>';
+  function addDiagramButton(block) {
+    if (!block.querySelector('svg')) return;
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'mermaid-zoom';
+    b.title = 'View full screen'; b.setAttribute('aria-label', 'View diagram full screen');
+    b.innerHTML = ICON_ZOOM;
+    b.addEventListener('click', function () { openDiagram(block); });
+    block.appendChild(b);
+  }
+
   async function renderMermaid(root, token) {
     var blocks = root.querySelectorAll('.mermaid-block');
     var n = 0;
@@ -458,6 +471,7 @@
         block.innerHTML = out.svg;
         if (effectiveDark()) colorizeMermaid(block);
         fixMermaidContrast(block);
+        addDiagramButton(block);
       } catch (e) {
         var stray = document.getElementById('d' + id);
         if (stray) stray.remove();
@@ -1114,6 +1128,71 @@
     renderTree();
   });
 
+  // ------------------------------------------------------------ full-screen diagram (PRD 7.4)
+  var diagramEl = $('#diagram-view'), diagramStage = $('#diagram-stage'), diagramPan = $('#diagram-pan');
+  var dv = { x: 0, y: 0, s: 1, w: 0, h: 0, fit: 1 };
+  var DV_MIN = 0.05, DV_MAX = 20;
+  function dvApply() {
+    diagramPan.style.transform = 'translate(' + dv.x + 'px,' + dv.y + 'px) scale(' + dv.s + ')';
+    $('#diagram-zoom').textContent = Math.round(dv.s * 100) + '%';
+    diagramEl.dataset.scale = String(dv.s);
+  }
+  function dvZoomAt(factor, cx, cy) {
+    var ns = Math.min(DV_MAX, Math.max(DV_MIN, dv.s * factor));
+    var k = ns / dv.s;
+    dv.x = cx - (cx - dv.x) * k; dv.y = cy - (cy - dv.y) * k; dv.s = ns; dvApply();
+  }
+  function dvFit() {
+    var vw = diagramStage.clientWidth, vh = diagramStage.clientHeight;
+    var s = Math.min(vw * 0.92 / dv.w, vh * 0.92 / dv.h, 4);
+    dv.fit = s; dv.s = s; dv.x = (vw - dv.w * s) / 2; dv.y = (vh - dv.h * s) / 2; dvApply();
+  }
+  function openDiagram(block) {
+    var svg = block.querySelector('svg');
+    if (!svg) return;
+    var vb = svg.viewBox && svg.viewBox.baseVal;
+    var box = svg.getBoundingClientRect();
+    dv.w = (vb && vb.width) || box.width || 800; dv.h = (vb && vb.height) || box.height || 600;
+    clear(diagramPan);
+    var copy = svg.cloneNode(true);
+    copy.setAttribute('width', dv.w); copy.setAttribute('height', dv.h);
+    copy.style.maxWidth = 'none';
+    diagramPan.appendChild(copy);
+    lastFocus = document.activeElement;
+    diagramEl.hidden = false;
+    dvFit();
+    $('#diagram-close').focus();
+  }
+  function closeDiagram() {
+    diagramEl.hidden = true; clear(diagramPan);
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  $('#diagram-close').addEventListener('click', closeDiagram);
+  $('#diagram-fit').addEventListener('click', dvFit);
+  $('#diagram-in').addEventListener('click', function () { dvZoomAt(1.25, diagramStage.clientWidth / 2, diagramStage.clientHeight / 2); });
+  $('#diagram-out').addEventListener('click', function () { dvZoomAt(0.8, diagramStage.clientWidth / 2, diagramStage.clientHeight / 2); });
+  diagramStage.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var r = diagramStage.getBoundingClientRect();
+    var dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    dvZoomAt(Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  var dvDrag = null;
+  diagramStage.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    dvDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, ox: dv.x, oy: dv.y };
+    diagramStage.setPointerCapture(e.pointerId); diagramStage.classList.add('dragging');
+  });
+  diagramStage.addEventListener('pointermove', function (e) {
+    if (!dvDrag || e.pointerId !== dvDrag.id) return;
+    dv.x = dvDrag.ox + (e.clientX - dvDrag.x); dv.y = dvDrag.oy + (e.clientY - dvDrag.y); dvApply();
+  });
+  function dvEnd(e) { if (dvDrag && e.pointerId === dvDrag.id) { dvDrag = null; diagramStage.classList.remove('dragging'); } }
+  diagramStage.addEventListener('pointerup', dvEnd);
+  diagramStage.addEventListener('pointercancel', dvEnd);
+  diagramStage.addEventListener('dblclick', dvFit);
+  window.addEventListener('resize', function () { if (!diagramEl.hidden) dvFit(); });
+
   // ------------------------------------------------------------ keyboard shortcuts (PRD 7.5)
   var shortcutsEl = $('#shortcuts');
   function openShortcuts() { lastFocus = document.activeElement; shortcutsEl.hidden = false; $('#shortcuts-close').focus(); }
@@ -1126,6 +1205,16 @@
   function focusSearch() { searchInput.focus(); searchInput.select(); }
 
   document.addEventListener('keydown', function (e) {
+    if (!diagramEl.hidden) {
+      var dk = e.key;
+      if (dk === 'Escape') closeDiagram();
+      else if (dk === '+' || dk === '=') dvZoomAt(1.25, diagramStage.clientWidth / 2, diagramStage.clientHeight / 2);
+      else if (dk === '-' || dk === '_') dvZoomAt(0.8, diagramStage.clientWidth / 2, diagramStage.clientHeight / 2);
+      else if (dk === '0') dvFit();
+      else if (dk !== 'Tab') return;
+      if (dk !== 'Tab') e.preventDefault();
+      return;
+    }
     if (e.key === 'Escape' && !shortcutsEl.hidden) { closeShortcuts(); return; }
     if (!settingsEl.hidden || !shortcutsEl.hidden) return;
     var mod = e.metaKey || e.ctrlKey;

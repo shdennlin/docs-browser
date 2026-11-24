@@ -100,3 +100,4 @@ python3 tests/suite.py --milestone all   # every acceptance criterion of PRD sec
 - In dark mode the page uses the Dracula palette with rainbow headings; light mode is unchanged. The sun/moon button switches between light and dark (remembered); without it the page follows the system.
 - Hover a folder for its expand / collapse icons (open or close everything inside it); `Wrap` toggles long names; a floating `☰` outline lists the headings; `⚙` opens the settings. HTML pages fill the right panel.
 - Command/Control-click (or middle-click) a file to open it in a new tab; `[` `]` switch tabs, `Alt W` closes one. Shortcuts: `/` or `Cmd/Ctrl K` search, `j` `k` `g` `G` scroll, `o` outline, `d` light/dark, `c` copy the file name, `?` shows the full list.
+- Every Mermaid diagram has a `⤢` button that opens it full screen: drag to pan, mouse wheel (or pinch) to zoom, `Fit` or `0` to refit, `Esc` to close.
