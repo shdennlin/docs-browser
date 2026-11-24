@@ -21,7 +21,7 @@ From a git URL, pinned to a release tag (replace the URL with where you host the
 repository has no remote yet):
 
 ```bash
-cargo install --locked --git <URL> --tag v0.1.2
+cargo install --locked --git <URL> --tag v0.1.3
 ```
 
 `--locked` makes cargo use the committed `Cargo.lock`, which is what pins exact dependency versions.

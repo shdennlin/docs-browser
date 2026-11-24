@@ -24,6 +24,7 @@
 | v1.4.14 (2026-11-24) | Resizable sidebar added on request: drag, keyboard, double click, 180 px to 60% limits, remembered in `localStorage` (5, AC-70, T-3.5) |
 | v1.4.15 (2026-11-24) | Sidebar review fixes: a drag follows one pointer and also ends on lost capture and window blur; no jump at the grab point; the chosen width survives a smaller window; a stored value must be a strict integer; AC-70 checks all of it (5) |
 | v1.4.16 (2026-11-24) | Added on request: Dracula theme in dark mode (page, Markdown, code, Mermaid, rainbow headings), `MD`/`HTML` badges, expand/collapse all, file name filter and full-text search (`GET /api/search`, 7.3, 11), default port 4747 instead of 3000 (4 browser ACs, 2 unit tests, T-3.6) |
+| v1.4.17 (2026-11-25) | Release 0.1.3: includes everything of v1.4.14 to v1.4.16 (sidebar, theme, search, badges, expand/collapse, default port 4747); `Cargo.toml` and the README install tag updated |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
