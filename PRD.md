@@ -10,8 +10,9 @@
 | v1.4 | `/files/*` serves an **extension whitelist** only; visibility checked on both the requested and the canonical path and compared case-insensitively; one coherent symlink policy (followed, listed, watched, aliased); event pipeline rebuilt as *update state, then broadcast*; every acceptance criterion owned by exactly one milestone; unit tests separated from acceptance criteria; decisions D1 to D10 |
 | v1.4.1 (2026-11-24) | T-0.3 findings: `follow_symlinks(false)` is required on Linux, real-path events make `aliases` mandatory, ignored directories may still be watched (8.1); debouncer limits, directory detection, `Rescan` API (8.2); drop the watcher on any initial `watch()` error (8.5); new AC-57. Earlier in this revision, M0 measurements folded in: `style-src 'unsafe-inline'` is required by Mermaid (12.5); macOS `canonicalize` returns the on-disk case and APFS keeps the stored Unicode form (12.2); pinned crate versions, `rust-version`, package `exclude` (10.1); `/files//a` added to AC-20; Linux-specific variants for AC-28, AC-63, AC-68, AC-69 and a Linux-run recipe in 13 |
 | v1.4.2 (2026-11-24) | M1: directory scan uses `std::fs::read_dir`; `walkdir` removed (10.1, 10.3); resolver steps 3 and 7 clarified (lexical normalization, extension checked on listed name and canonical target, non-regular files denied) |
-| v1.4.4 (2026-11-24) | M3: frontend tests run as `node --test frontend/*.test.js` (Node 22 treats `node --test frontend/` as a file path, not a directory); client-side link classification uses the tree for Markdown/HTML targets and leaves dot-prefix visibility of assets to the server (6) |
 | v1.4.3 (2026-11-24) | CP-2: app-shell CSP gains `frame-ancestors 'none'` (12.5); every response, including the Host/Origin 403, carries the security headers (11); `/api/file` bounds the read itself and `/files/*` bounds the stream to the opened length (11); `tower-http` and `mime_guess` dropped (fixed MIME table, one header middleware); `rust-embed` needs its `include-exclude` feature to keep vendor bookkeeping files out of the binary (10.1) |
+| v1.4.4 (2026-11-24) | M3: frontend tests run as `node --test frontend/*.test.js` (Node 22 treats `node --test frontend/` as a file path, not a directory); client-side link classification uses the tree for Markdown/HTML targets and leaves dot-prefix visibility of assets to the server (6) |
+| v1.4.5 (2026-11-24) | CP-3: heading ids are prefixed `user-content-`, slugs come from rendered text, navigation resets scroll and layout, anchor scroll waits for images (6, AC-42) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -185,7 +186,7 @@ Render: headings, tables, task lists, code blocks, links, images, GitHub-flavore
 - Relative links that resolve outside the root, or to a file that is not whitelisted or not visible, render as plain text (D5).
 - External links open in a new tab with `rel="noopener noreferrer"`.
 - Link targets are percent-decoded once before resolution.
-- Heading anchors use a GitHub-compatible slug: lowercase, punctuation stripped, spaces to `-`, duplicates suffixed `-1`, `-2`; non-ASCII letters (e.g. CJK) are kept. The slug function lives in `frontend/lib.js` and is unit-tested.
+- Heading anchors use a GitHub-compatible slug: lowercase, punctuation stripped, spaces to `-`, duplicates suffixed `-1`, `-2`; non-ASCII letters (e.g. CJK) are kept. The slug is computed from the heading's rendered text, and the element id carries the prefix `user-content-` (as on GitHub) so that a heading such as `# Tree` cannot clobber an element of the page; URL hashes stay unprefixed. The slug function lives in `frontend/lib.js` and is unit-tested. Opening a file starts at the top of the page; only a hash scrolls, and only after images have loaded (bounded wait).
 
 **Images:** a relative image path is resolved against the directory of the Markdown file that contains it, then rewritten to `/files/...`. `https` images are allowed by the app-shell CSP (§12.5).
 
@@ -695,7 +696,7 @@ site/
 |---|---|---|---|---|
 | AC-40 | M3 | §5 deep link | Fresh load of `/?file=docs/architecture.md`; reload; Back/Forward | File shown; `docs` expanded and file highlighted; reload keeps state; Back/Forward move between viewed files |
 | AC-41 | M3 | §11 invalid | `/?file=does/not/exist.md`, `/?file=../../etc/hosts`, `/?file=.env` | `curl` status `200` for the shell; page shows "File not found" |
-| AC-42 | M3 | §5 anchor | `/?file=docs/long.md#bottom` | The "Bottom" heading is in the viewport |
+| AC-42 | M3 | §5 anchor | `/?file=docs/long.md#bottom` | The "Bottom" heading is in the viewport; opening another file afterwards starts at the top |
 | AC-43 | M4 | §8.4 Markdown | Open `README.md`, append a line | The line appears within 2 s with no navigation; scroll position kept |
 | AC-44 | M4 | §8.4 HTML | Open `docs/flow.html`, `touch` it | The iframe fires a new `load` event within 2 s |
 | AC-45 | M4 | §8.4 removed | Delete the open file; then recreate it | "File no longer exists" with URL unchanged; the preview restores within 2 s of recreation |

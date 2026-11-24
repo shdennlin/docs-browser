@@ -242,16 +242,15 @@ checks['AC-17'] = async (cdp) => {
 checks['AC-40'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=docs/architecture.md');
   const first = await p.ev("({open: !!document.querySelector('details[data-dir=\"docs\"]').open, sel: document.querySelector('#tree a.selected') && document.querySelector('#tree a.selected').dataset.path})");
-  await p.ev('location.reload(); true');
-  await sleep(300);
-  await p.ready();
+  await p.ev('window.__beforeReload = 1; location.reload(); true');
+  await waitFor(() => p.ev("window.__beforeReload === undefined && document.body.dataset.state === 'ready'"), 10000);
   const reloaded = await p.ev("({search: location.search, open: !!document.querySelector('details[data-dir=\"docs\"]').open, sel: document.querySelector('#tree a.selected') && document.querySelector('#tree a.selected').dataset.path})");
   await p.ev("document.querySelector('#tree a[data-path=\"README.md\"]').click(); true");
   await waitFor(() => p.ev("location.search === '?file=README.md' && document.body.dataset.state === 'ready' && document.title.startsWith('README.md')"), 8000);
   await p.ev('history.back(); true');
-  const back = await waitFor(() => p.ev("location.search === '?file=docs/architecture.md' && document.body.dataset.state === 'ready' && document.title.startsWith('docs/architecture.md')"), 8000);
+  const back = await waitFor(() => p.ev("location.search === '?file=docs/architecture.md' && document.body.dataset.state === 'ready' && document.title.startsWith('docs/architecture.md') && (document.querySelector('#preview h1')||{}).textContent === 'Architecture'"), 8000);
   await p.ev('history.forward(); true');
-  const fwd = await waitFor(() => p.ev("location.search === '?file=README.md' && document.body.dataset.state === 'ready' && document.title.startsWith('README.md')"), 8000);
+  const fwd = await waitFor(() => p.ev("location.search === '?file=README.md' && document.body.dataset.state === 'ready' && document.title.startsWith('README.md') && (document.querySelector('#preview h1')||{}).textContent === 'Root README'"), 8000);
   await p.close();
   const ok = first.open && first.sel === 'docs/architecture.md' && reloaded.search === '?file=docs/architecture.md'
     && reloaded.open && reloaded.sel === 'docs/architecture.md' && back && fwd;
@@ -274,9 +273,15 @@ checks['AC-41'] = async (cdp) => {
 checks['AC-42'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=docs/long.md#bottom');
   await sleep(300);
-  const r = await p.ev("(function(){var h=document.getElementById('bottom'); if(!h) return null; var b=h.getBoundingClientRect(); return {top: Math.round(b.top), inView: b.top >= 0 && b.bottom <= window.innerHeight}; })()");
+  const r = await p.ev("(function(){var h=document.getElementById('user-content-bottom'); if(!h) return null; var b=h.getBoundingClientRect(); return {top: Math.round(b.top), inView: b.top >= 0 && b.bottom <= window.innerHeight, mainScroll: document.getElementById('main').scrollTop}; })()");
+  // Re-opening the same long file without a hash must start at the top. A short file would not prove
+  // this (the browser clamps the offset itself), so the page must be as tall as the one just left.
+  await p.ev("document.querySelector('#tree a[data-path=\"docs/long.md\"]').click(); true");
+  await waitFor(() => p.ev("location.search === '?file=docs/long.md' && location.hash === '' && document.body.dataset.state === 'ready'"), 8000);
+  await sleep(200);
+  const after = await p.ev("document.getElementById('main').scrollTop");
   await p.close();
-  return [!!(r && r.inView), JSON.stringify(r)];
+  return [!!(r && r.inView && r.mainScroll > 0) && after === 0, JSON.stringify({ anchor: r, scrollAfterNavigation: after })];
 };
 
 // ---------------------------------------------------------------- run

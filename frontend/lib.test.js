@@ -1,4 +1,4 @@
-// Unit tests for frontend/lib.js. Run with: node --test frontend/
+// Unit tests for frontend/lib.js. Run with: node --test frontend/*.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('./lib.js');

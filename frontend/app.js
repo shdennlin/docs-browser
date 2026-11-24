@@ -3,6 +3,7 @@
   'use strict';
 
   var L = window.DocsLib;
+  var ID_PREFIX = 'user-content-';
   var $ = function (sel) { return document.querySelector(sel); };
   var els = { tree: $('#tree'), preview: $('#preview'), banners: $('#banners'), treeBanners: $('#tree-banners') };
 
@@ -65,10 +66,19 @@
     return defaultImage(tokens, idx, options, env, self);
   };
 
+  // The slug comes from the rendered text (not the Markdown source) and ids carry a prefix, as on
+  // GitHub, so a heading such as "# Tree" cannot clobber an element of the page itself.
+  function inlineText(inline) {
+    var out = '';
+    ((inline && inline.children) || []).forEach(function (c) {
+      if (c.type === 'text' || c.type === 'code_inline') out += c.content;
+      else if (c.type === 'softbreak') out += ' ';
+    });
+    return out;
+  }
+
   md.renderer.rules.heading_open = function (tokens, idx, options, env, self) {
-    var inline = tokens[idx + 1];
-    var text = inline && inline.content ? inline.content : '';
-    tokens[idx].attrSet('id', env.slugger(text));
+    tokens[idx].attrSet('id', ID_PREFIX + env.slugger(inlineText(tokens[idx + 1])));
     return self.renderToken(tokens, idx, options);
   };
 
@@ -179,8 +189,21 @@
   // ------------------------------------------------------------ preview
   function scrollToHash(hash) {
     if (!hash) return;
-    var target = document.getElementById(hash);
+    var target = document.getElementById(ID_PREFIX + hash);
     if (target) target.scrollIntoView({ block: 'start' });
+  }
+
+  // Images load after layout; wait for them (bounded) so an anchor scroll lands on the right place.
+  function waitForImages(root, timeout) {
+    var pending = Array.prototype.filter.call(root.querySelectorAll('img'), function (i) { return !i.complete; });
+    if (!pending.length) return Promise.resolve();
+    var loaded = Promise.all(pending.map(function (img) {
+      return new Promise(function (resolve) {
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+    }));
+    return Promise.race([loaded, new Promise(function (resolve) { setTimeout(resolve, timeout); })]);
   }
 
   async function renderMermaid(root, token) {
@@ -230,6 +253,7 @@
       slugger: L.makeSlugger(),
     });
     await renderMermaid(els.preview, token);
+    await waitForImages(els.preview, 3000);
     if (token !== state.token) return;
     scrollToHash(hash);
   }
@@ -256,6 +280,9 @@
     var token = ++state.token;
     document.body.dataset.state = 'rendering';
     clear(els.banners);
+    // Every navigation starts from the top with the default layout; only an anchor scrolls later.
+    els.preview.classList.remove('wide');
+    $('#main').scrollTop = 0;
     state.current = path;
     markSelected();
     if (!path) {
