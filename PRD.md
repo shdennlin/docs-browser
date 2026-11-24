@@ -43,6 +43,7 @@
 | v1.4.33 (2026-11-25) | Release 0.1.4: includes everything of v1.4.18 to v1.4.32 (Mermaid contrast, fuzzy file name search, copy file name, dead contents links, tabs and keyboard shortcuts, light/dark toggle, bottom bar, settings dialog and the other list and outline refinements); the Linux container suite passes all 101 rows; `Cargo.toml` and the README install tag updated |
 | v1.4.34 (2026-11-25) | Dark Mermaid: every plain flowchart node and every sequence-diagram participant gets its own Dracula accent (tinted fill, accent border); nodes the diagram styled itself and the light theme are unchanged (7.4; AC-84; AC-80 no longer expects plain nodes to share one colour) |
 | v1.4.35 (2026-11-25) | Full-screen Mermaid viewer: a button on every diagram opens it over the page; drag pans, the wheel zooms around the pointer, `Esc` closes (7.4; AC-85) |
+| v1.4.36 (2026-11-25) | Release 0.2.0: includes v1.4.34 (dark Mermaid accents) and v1.4.35 (full-screen Mermaid viewer) on top of 0.1.4, plus the README screenshots and the demo docs; `Cargo.toml` and the README install tag updated |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
