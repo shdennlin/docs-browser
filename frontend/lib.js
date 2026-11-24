@@ -269,6 +269,29 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- colour contrast (PRD 6 Mermaid)
+  // Parses 'rgb(r, g, b)' / 'rgba(r, g, b, a)' as returned by getComputedStyle. Returns [r, g, b, a] or null.
+  function parseColor(s) {
+    var m = /^rgba?\(\s*([\d.]+)[ ,]+([\d.]+)[ ,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(String(s || '').trim());
+    if (!m) return null;
+    var a = m[4] === undefined ? 1 : (m[4].slice(-1) === '%' ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+    return [Number(m[1]), Number(m[2]), Number(m[3]), a];
+  }
+  function relLuminance(c) {
+    var v = c.slice(0, 3).map(function (x) { x = x / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+    return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  }
+  function contrastRatio(a, b) {
+    var x = relLuminance(a), y = relLuminance(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  }
+  // The text colour to use on `fill`: the current one when it is readable (WCAG 4.5:1), otherwise whichever
+  // of `dark` and `light` reads better. All arguments are [r, g, b, a] arrays; returns one of them.
+  function pickTextColor(fill, current, dark, light) {
+    if (current && contrastRatio(fill, current) >= 4.5) return current;
+    return contrastRatio(fill, dark) >= contrastRatio(fill, light) ? dark : light;
+  }
+
   // ---------------------------------------------------------------- sidebar width (PRD 5)
   var SIDEBAR_DEFAULT = 300;
   var SIDEBAR_MIN = 180;
@@ -292,6 +315,7 @@
   return {
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT, SIDEBAR_MIN: SIDEBAR_MIN,
     clampSidebarWidth: clampSidebarWidth, parseStoredWidth: parseStoredWidth,
+    parseColor: parseColor, contrastRatio: contrastRatio, pickTextColor: pickTextColor,
     queryTokens: queryTokens, fuzzyMatch: fuzzyMatch, fuzzyFiles: fuzzyFiles, collectDirs: collectDirs,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
     slugify: slugify, makeSlugger: makeSlugger,

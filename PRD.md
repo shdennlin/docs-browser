@@ -36,6 +36,7 @@
 | v1.4.26 (2026-11-25) | The current outline entry loses its coloured left border; background and bold remain (7.4; AC-75) |
 | v1.4.27 (2026-11-25) | Contents links to missing headings are struck through and inert (7.4; AC-79) |
 | v1.4.28 (2026-11-25) | Folder buttons sit right after the folder name; every file and folder has a tooltip with its full path; with Wrap off names are shown in full and the list scrolls sideways (an ellipsis variant was tried and dropped on request) (7.3; AC-75) |
+| v1.4.29 (2026-11-25) | Mermaid text is re-coloured per node when a diagram's own fill makes the theme's text unreadable (below 4.5:1), in both themes (6 Mermaid; AC-80) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -224,6 +225,8 @@ Light mode keeps the system look. When the system is in dark mode the page uses 
 ### Mermaid
 
 Blocks with the `mermaid` language tag render as diagrams. Mermaid runs with `securityLevel: 'strict'`. If a block fails to parse, that block shows an error box containing the parser message and the source; the rest of the page still renders.
+
+A diagram may set its own fill colours (`style X fill:#fff3cd`). After a diagram is rendered, the viewer measures the text of every node and cluster against that shape's own fill and, when the contrast is below 4.5:1 (WCAG AA), changes the text to a dark (`#1e1f29`) or a light (`#f8f8f2`) colour, whichever reads better; text that is already readable is left alone. This applies in light and in dark mode. Fills with no colour or that are mostly transparent are skipped.
 
 ### HTML
 
@@ -736,6 +739,7 @@ site/
 | AC-77 | M3 | §7.4 contents links, outline | Browser `/?file=docs/toc.md` (headings with emoji, `&`, `?` and a duplicate): click each contents link, including `#threat-detection--response` and `#%EF%B8%8F-threat-detection--response` for `🛡️ Threat Detection & Response`; click outline entries 3 to 7; open `/?file=docs/toc.md#-automation-mode` | Every click leaves the heading within 80 px of the top of the panel and sets the `#hash`; the deep link lands on the heading |
 | AC-78 | M3 | §7.4 copy file name | Browser: `/` (no file); `/?file=docs/subdir/rel.md` and click the copy button (clipboard stubbed), wait 1.4 s; `/?file=docs/flow.html` and click it | Hidden without a file; shown with a file; `rel.md` copied once, the button shows `✓` and returns to normal after the wait; `flow.html` copied; the button does not overlap the outline button |
 | AC-79 | M3 | §7.4 dead contents links | Browser `/?file=docs/toc.md` (contents with `#no-such-heading` and emoji links): inspect, click the dead link, click `#how-to-choose` | Only `no-such-heading` is marked, with `line-through`, `cursor: not-allowed` and the tooltip `找不到這個標題`; the click leaves the address unchanged; the live link jumps and is not marked (the emoji links are not marked either) |
+| AC-80 | M3 | §6 Mermaid contrast | Browser `/?file=docs/contrast.md` (nodes with `fill:#fff3cd`, `#1a1a1a`, `#e3f2fd` and one unstyled) in dark mode, then in light mode | In both modes every node's text against its own fill is at least 4.5:1; the unstyled node keeps the Dracula colours (`68,71,90` fill, `248,248,242` text) in dark mode |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -841,6 +845,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.4 contents links and outline jumps | AC-77 |
 | §7.4 copy file name | AC-78 |
 | §7.4 dead contents links | AC-79 |
+| §6 Mermaid contrast | AC-80 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -950,6 +955,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.9 | Fuzzy ranked file name search, outer-panel snap-back, lenient anchor lookup for emoji headings (added on request) | T-3.8 | AC-73, AC-75, AC-77 |
 | T-3.10 | Copy file name button (added on request) | T-3.9 | AC-78 |
 | T-3.11 | Mark contents links to missing headings (added on request) | T-3.10 | AC-79 |
+| T-3.12 | Mermaid text contrast per node (added on request) | T-3.11 | AC-80 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

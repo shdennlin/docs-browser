@@ -114,6 +114,19 @@ MD
     for j in $(seq 1 30); do echo "Filler $j."; echo; done
   done
 } > docs/toc.md
+cat > docs/contrast.md <<'MD'
+# Contrast
+
+```mermaid
+flowchart TD
+  A[light cream] --> B[plain node]
+  A --> C[near black]
+  B --> D[light blue]
+  style A fill:#fff3cd
+  style C fill:#1a1a1a
+  style D fill:#e3f2fd
+```
+MD
 cat > docs/code.md <<'MD'
 # Code sample
 

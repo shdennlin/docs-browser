@@ -154,3 +154,22 @@ test('fuzzyFiles puts the better match first even when it comes later in the tre
   ];
   assert.deepEqual(L.fuzzyFiles(tree, 'readme').map((r) => r.path), ['readme.md', 'a/old-notes-readme-v2.md']);
 });
+
+test('parseColor reads the computed rgb forms', () => {
+  assert.deepEqual(L.parseColor('rgb(255, 243, 205)'), [255, 243, 205, 1]);
+  assert.deepEqual(L.parseColor('rgba(0, 0, 0, 0.5)'), [0, 0, 0, 0.5]);
+  assert.deepEqual(L.parseColor('rgb(1 2 3 / 50%)'), [1, 2, 3, 0.5]);
+  assert.equal(L.parseColor('none'), null);
+  assert.equal(L.parseColor('#fff'), null);
+});
+
+test('contrastRatio and pickTextColor: keep a readable colour, fix an unreadable one', () => {
+  const white = [255, 255, 255, 1], black = [0, 0, 0, 1], dark = [30, 31, 41, 1], light = [248, 248, 242, 1];
+  assert.ok(Math.abs(L.contrastRatio(white, black) - 21) < 0.01);
+  const cream = [255, 243, 205, 1];
+  assert.ok(L.contrastRatio(cream, light) < 2);                       // the problem in dark mode
+  assert.equal(L.pickTextColor(cream, light, dark, light), dark);     // light text on a light fill -> dark text
+  assert.equal(L.pickTextColor(cream, dark, dark, light), dark);      // already readable: unchanged
+  assert.equal(L.pickTextColor([30, 30, 30, 1], dark, dark, light), light); // dark text on a dark fill -> light text
+  assert.equal(L.pickTextColor([68, 71, 90, 1], light, dark, light), light); // the Dracula node colour is fine
+});

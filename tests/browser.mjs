@@ -941,6 +941,41 @@ checks['AC-79'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-80: Mermaid text stays readable on diagram-defined fills, in dark and light mode
+checks['AC-80'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    const measure = () => q(`(function(){
+      function parse(s){var m=/rgba?\\(\\s*([\\d.]+)[ ,]+([\\d.]+)[ ,]+([\\d.]+)/.exec(s);return m?[+m[1],+m[2],+m[3]]:null}
+      function lum(c){var v=c.map(function(x){x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)});return 0.2126*v[0]+0.7152*v[1]+0.0722*v[2]}
+      function ratio(a,b){var x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)}
+      var out={};
+      Array.from(document.querySelectorAll('#preview .mermaid g.node')).forEach(function(n){
+        var shape=n.querySelector('rect,polygon,circle,ellipse,path');var fill=parse(getComputedStyle(shape).fill);
+        var el=n.querySelector('foreignObject span, foreignObject p, foreignObject div, text, tspan');
+        var cs=getComputedStyle(el);var isSvg=el.namespaceURI==='http://www.w3.org/2000/svg';
+        var txt=parse(isSvg?cs.fill:cs.color);var name=n.textContent.trim();
+        out[name]={fill:fill.join(','),text:txt.join(','),ratio:Math.round(ratio(fill,txt)*10)/10};
+      });
+      return out})()`);
+    const rendered = async (scheme) => {
+      await p.media(scheme);
+      await p.goto('/?file=docs/contrast.md'); await p.ready();
+      await waitFor(() => p.ev("document.querySelectorAll('#preview .mermaid g.node').length >= 4"), 10000, 100);
+      await sleep(200);
+      return measure();
+    };
+    const dark = await rendered('dark');
+    const light = await rendered('light');
+    const names = ['light cream', 'plain node', 'near black', 'light blue'];
+    const allReadable = (r) => names.every((n) => r[n] && r[n].ratio >= 4.5);
+    const ok = allReadable(dark) && allReadable(light)
+      && dark['plain node'].fill === '68,71,90' && dark['plain node'].text === '248,248,242';   // unstyled node untouched
+    return [ok, JSON.stringify({ dark, light })];
+  } finally { await p.close(); }
+};
+
 // ---------------------------------------------------------------- run
 const wanted = IDS.length ? IDS : Object.keys(checks);
 const out = [];

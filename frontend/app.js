@@ -378,6 +378,31 @@
     return Promise.race([loaded, new Promise(function (resolve) { setTimeout(resolve, timeout); })]);
   }
 
+  // A diagram can set its own fill colours (`style X fill:#fff3cd`). The theme's text colour may then be
+  // unreadable on them (white on cream in dark mode, dark on near-black in light mode), so every node and
+  // cluster gets text of a readable colour measured against its own fill.
+  var TEXT_DARK = [30, 31, 41, 1];
+  var TEXT_LIGHT = [248, 248, 242, 1];
+  function fixMermaidContrast(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('g.node, g.cluster'), function (node) {
+      var shape = node.querySelector('rect, polygon, circle, ellipse, path');
+      if (!shape) return;
+      var fill = L.parseColor(getComputedStyle(shape).fill);
+      if (!fill || fill[3] < 0.5) return; // no fill, or a see-through one: the page behind it decides
+      var texts = node.querySelectorAll('text, tspan, foreignObject div, foreignObject span, foreignObject p');
+      Array.prototype.forEach.call(texts, function (el) {
+        var cs = getComputedStyle(el);
+        var isSvg = el.namespaceURI === 'http://www.w3.org/2000/svg';
+        var cur = L.parseColor(isSvg ? cs.fill : cs.color);
+        var want = L.pickTextColor(fill, cur, TEXT_DARK, TEXT_LIGHT);
+        if (want === cur) return;
+        var css = 'rgb(' + want[0] + ', ' + want[1] + ', ' + want[2] + ')';
+        if (isSvg) el.style.setProperty('fill', css, 'important');
+        el.style.setProperty('color', css, 'important');
+      });
+    });
+  }
+
   async function renderMermaid(root, token) {
     var blocks = root.querySelectorAll('.mermaid-block');
     var n = 0;
@@ -391,6 +416,7 @@
         var out = await window.mermaid.render(id, source);
         block.className = 'mermaid';
         block.innerHTML = out.svg;
+        fixMermaidContrast(block);
       } catch (e) {
         var stray = document.getElementById('d' + id);
         if (stray) stray.remove();
