@@ -127,6 +127,27 @@ flowchart TD
   style D fill:#e3f2fd
 ```
 MD
+cat > docs/palette.md <<'MD'
+# Palette
+
+```mermaid
+flowchart LR
+  P[first] --> Q[second]
+  Q --> R[third]
+  R --> S[styled]
+  style S fill:#fff3cd
+```
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant W as Web
+  participant A as API
+  U->>W: save
+  W->>A: put
+  A-->>U: ok
+```
+MD
 cat > docs/code.md <<'MD'
 # Code sample
 

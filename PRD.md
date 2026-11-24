@@ -41,6 +41,7 @@
 | v1.4.31 (2026-11-25) | In-page tabs (command/control click, middle click), keyboard shortcuts with a help dialog (7.5; AC-81, AC-82); layout: theme and settings buttons in a bottom bar, the Names/Contents switch inside the search box (7.3; AC-83) |
 | v1.4.32 (2026-11-25) | The active tab is marked by an underline (reference look) and idle tabs hide their `×`; a `?` shortcuts button at the bottom left of the list (7.3, 7.5; AC-83) |
 | v1.4.33 (2026-11-25) | Release 0.1.4: includes everything of v1.4.18 to v1.4.32 (Mermaid contrast, fuzzy file name search, copy file name, dead contents links, tabs and keyboard shortcuts, light/dark toggle, bottom bar, settings dialog and the other list and outline refinements); the Linux container suite passes all 101 rows; `Cargo.toml` and the README install tag updated |
+| v1.4.34 (2026-11-25) | Dark Mermaid: every plain flowchart node and every sequence-diagram participant gets its own Dracula accent (tinted fill, accent border); nodes the diagram styled itself and the light theme are unchanged (7.4; AC-84; AC-80 no longer expects plain nodes to share one colour) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -752,6 +753,7 @@ site/
 | AC-81 | M3 | §7.5 tabs | Browser `/?file=README.md`: plain click, command-click (real mouse, modifier 4), control-click on an open file, command-click on a link inside a document, scroll and switch tabs, reload, close with `×` and a middle click, close all, two files named alike | A plain click replaces the active tab; the command-click opens a second tab and the address shows its file; an open file is activated not duplicated; the document link opens a third tab; the scroll position (600) comes back; the tab list survives the reload with the address file active; `×` and the middle click close tabs; no tab left gives the empty state and `/`; equal names show `rel.md` and `README.md` with their folder as needed |
 | AC-82 | M3 | §7.5 shortcuts | Browser `/?file=docs/outline.md`: `/`, `Cmd K`, `Ctrl K`, `d` inside the search box, `j` `j` `k` `G` `g`, `o` twice, `d` twice, `c`, `[` `]` with two tabs, `Alt W`, `?`, `j` while the dialog is open, `Escape` | The search box gets focus each time; typing `d` in it changes nothing; the page scrolls 80, 160, 80 px, then to the bottom and top; the outline button toggles; the theme switches to Dracula and back; `outline.md` is copied; `[` and `]` change the tab; `Alt W` closes one; the dialog lists at least 9 rows, ignores `j` and closes on `Escape` |
 | AC-83 | M3 | §7.3 layout | Browser `/?file=README.md`: measure the theme button, the settings button, the `Names`/`Contents` switch and the list controls | Theme and settings buttons are in the bottom bar and not in the toolbar; the switch lies inside the search box at its right end (the box has room for it); the list controls are three buttons and do not include the switch; the bottom bar starts with the `?` button (leftmost, at the left and bottom edge of the list), which opens the shortcuts dialog and `Escape` closes it; with two tabs open the active one has a bottom accent line and a lighter background and shows its `×`, the other has no shadow and a hidden `×` |
+| AC-84 | M3 | §7.4 Mermaid colours | Browser `docs/palette.md` (a flowchart with three plain nodes and one `style` node, and a three-participant sequence diagram) in dark and in light mode | Dark: the three plain nodes have three different fills; the `style` node keeps its own fill; each participant has one fill and border colour on both its top and bottom box, different from the other participants; every node text has contrast >= 4.5. Light: plain nodes keep the single theme fill; participants keep the theme's own distinct colours |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -860,6 +862,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §6 Mermaid contrast | AC-80 |
 | §7.5 tabs and shortcuts | AC-81, AC-82 |
 | §7.3 sidebar layout | AC-83 |
+| §7.4 Mermaid colours (dark) | AC-84 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -971,6 +974,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.11 | Mark contents links to missing headings (added on request) | T-3.10 | AC-79 |
 | T-3.12 | Mermaid text contrast per node (added on request) | T-3.11 | AC-80 |
 | T-3.13 | In-page tabs and keyboard shortcuts; theme/settings bar at the bottom, scope switch in the search box (added on request) | T-3.12 | AC-81, AC-82, AC-83 |
+| T-3.14 | Dark Mermaid: a distinct Dracula accent per plain node and per participant (added on request) | T-3.13 | AC-84 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

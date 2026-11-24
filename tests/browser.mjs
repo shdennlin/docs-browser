@@ -981,7 +981,52 @@ checks['AC-80'] = async (cdp) => {
     const names = ['light cream', 'plain node', 'near black', 'light blue'];
     const allReadable = (r) => names.every((n) => r[n] && r[n].ratio >= 4.5);
     const ok = allReadable(dark) && allReadable(light)
-      && dark['plain node'].fill === '68,71,90' && dark['plain node'].text === '248,248,242';   // unstyled node untouched
+      && dark['plain node'].text === '248,248,242';
+    return [ok, JSON.stringify({ dark, light })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-84: dark Mermaid gives every plain node and every participant its own accent; light and styled nodes keep theirs
+checks['AC-84'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    const measure = () => q(`(function(){
+      function parse(s){var m=/rgba?\\(\\s*([\\d.]+)[ ,]+([\\d.]+)[ ,]+([\\d.]+)/.exec(s);return m?[+m[1],+m[2],+m[3]]:null}
+      function lum(c){var v=c.map(function(x){x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4)});return 0.2126*v[0]+0.7152*v[1]+0.0722*v[2]}
+      function ratio(a,b){var x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)}
+      var nodes={}, minRatio=99;
+      Array.from(document.querySelectorAll('#preview .mermaid g.node')).forEach(function(n){
+        var shape=n.querySelector('rect,polygon,circle,ellipse,path');var fill=parse(getComputedStyle(shape).fill);
+        var el=n.querySelector('foreignObject span, foreignObject p, foreignObject div, text, tspan');var cs=getComputedStyle(el);
+        var txt=parse(el.namespaceURI==='http://www.w3.org/2000/svg'?cs.fill:cs.color);
+        minRatio=Math.min(minRatio,ratio(fill,txt));nodes[n.textContent.trim()]=fill.join(',');
+      });
+      var actors={};
+      Array.from(document.querySelectorAll('#preview .mermaid rect.actor')).forEach(function(r){
+        var f=getComputedStyle(r).fill+'|'+getComputedStyle(r).stroke;(actors[r.getAttribute('name')]=actors[r.getAttribute('name')]||new Set()).add(f)});
+      var a={};Object.keys(actors).forEach(function(k){a[k]=Array.from(actors[k])});
+      return {nodes:nodes,actors:a,minRatio:Math.round(minRatio*10)/10}})()`);
+    const rendered = async (scheme) => {
+      await p.media(scheme);
+      await p.goto('/?file=docs/palette.md'); await p.ready();
+      await waitFor(() => p.ev("document.querySelectorAll('#preview .mermaid g.node').length >= 4 && document.querySelectorAll('#preview .mermaid rect.actor').length >= 6"), 10000, 100);
+      await sleep(200);
+      return measure();
+    };
+    const dark = await rendered('dark');
+    const light = await rendered('light');
+    const plain = ['first', 'second', 'third'];
+    const distinct = (xs) => new Set(xs).size === xs.length;
+    const darkActors = Object.values(dark.actors);
+    const lightActors = Object.values(light.actors);
+    const ok = distinct(plain.map((n) => dark.nodes[n]))                         // each plain node its own colour
+      && dark.nodes.styled === '255,243,205'                                     // diagram-defined fill kept
+      && darkActors.length === 3 && darkActors.every((s) => s.length === 1)      // top and bottom box agree
+      && distinct(darkActors.map((s) => s[0]))                                   // each participant its own colour
+      && dark.minRatio >= 4.5
+      && new Set(plain.map((n) => light.nodes[n])).size === 1                    // light mode unchanged
+      && lightActors.length === 3 && distinct(lightActors.map((s) => s[0]));
     return [ok, JSON.stringify({ dark, light })];
   } finally { await p.close(); }
 };

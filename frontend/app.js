@@ -414,6 +414,35 @@
     });
   }
 
+  // Dark mode: the theme gives every node and every sequence-diagram participant one colour. Give each its
+  // own Dracula accent instead (a dark tint of the accent as fill, the accent itself as border), like the
+  // light theme does for participants. Nodes the diagram styled itself (style/classDef) keep their colours.
+  var ACCENTS = [[189, 147, 249], [139, 233, 253], [80, 250, 123], [255, 184, 108], [255, 121, 198], [255, 85, 85], [241, 250, 140]];
+  var DARK_BG = [40, 42, 54];
+  function accentCss(c) { return 'rgb(' + c.join(', ') + ')'; }
+  function tintCss(c) { return 'rgb(' + c.map(function (v, i) { return Math.round(DARK_BG[i] + (v - DARK_BG[i]) * 0.24); }).join(', ') + ')'; }
+  function paint(shape, i) {
+    var c = ACCENTS[i % ACCENTS.length];
+    shape.style.setProperty('fill', tintCss(c), 'important');
+    shape.style.setProperty('stroke', accentCss(c), 'important');
+  }
+  function colorizeMermaid(root) {
+    var i = 0;
+    Array.prototype.forEach.call(root.querySelectorAll('g.node'), function (node) {
+      if (node.getAttribute('class').replace(/\b(node|default)\b/g, '').trim()) return; // classDef / class
+      var shape = node.querySelector('rect, polygon, circle, ellipse, path');
+      if (!shape || /fill/.test(shape.getAttribute('style') || '')) return;                // style X fill:...
+      paint(shape, i++);
+    });
+    var seen = {}, count = 0;
+    var actors = Array.prototype.slice.call(root.querySelectorAll('rect.actor')).sort(function (a, b) { return a.getAttribute('x') - b.getAttribute('x'); });
+    actors.forEach(function (r) {
+      var name = r.getAttribute('name') || r.nextElementSibling && r.nextElementSibling.textContent || '';
+      if (!(name in seen)) seen[name] = count++;
+      paint(r, seen[name]);
+    });
+  }
+
   async function renderMermaid(root, token) {
     var blocks = root.querySelectorAll('.mermaid-block');
     var n = 0;
@@ -427,6 +456,7 @@
         var out = await window.mermaid.render(id, source);
         block.className = 'mermaid';
         block.innerHTML = out.svg;
+        if (effectiveDark()) colorizeMermaid(block);
         fixMermaidContrast(block);
       } catch (e) {
         var stray = document.getElementById('d' + id);
