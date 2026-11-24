@@ -146,3 +146,11 @@ test('fuzzyFiles: all words must match, best first, ties by path, folders are no
 test('collectDirs lists every folder path', () => {
   assert.deepEqual(L.collectDirs(FTREE), ['docs', 'docs/sub']);
 });
+
+test('fuzzyFiles puts the better match first even when it comes later in the tree', () => {
+  const tree = [
+    { name: 'a', type: 'directory', children: [{ name: 'old-notes-readme-v2.md', type: 'file', path: 'a/old-notes-readme-v2.md' }] },
+    { name: 'readme.md', type: 'file', path: 'readme.md' },
+  ];
+  assert.deepEqual(L.fuzzyFiles(tree, 'readme').map((r) => r.path), ['readme.md', 'a/old-notes-readme-v2.md']);
+});

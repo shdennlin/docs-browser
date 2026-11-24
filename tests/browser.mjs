@@ -784,9 +784,11 @@ checks['AC-75'] = async (cdp) => {
     const side = await q("({sl:document.getElementById('side-scroll').scrollLeft, wide:document.getElementById('side-scroll').scrollWidth > document.getElementById('side-scroll').clientWidth, tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left - document.getElementById('sidebar').getBoundingClientRect().left)})");
     // scrolled far to the right, every control is still in view
     // the outer panel must never scroll (a browser may do it on focus); it snaps back at once
-    await q("document.getElementById('sidebar').scrollLeft = 60; true");
+    await q("(function(){var s=document.getElementById('sidebar');var d=document.createElement('div');d.id='probe-wide';d.style.cssText='width:2000px;height:1px';s.appendChild(d);s.scrollLeft=60;return true})()");
+    const outerBefore = await q("document.getElementById('sidebar').scrollLeft");
     await sleep(100);
     const outerLeft = await q("document.getElementById('sidebar').scrollLeft");
+    await q("document.getElementById('probe-wide').remove(); true");
     await q("document.getElementById('side-scroll').scrollLeft = 10000; true");
     const farRight = await q("(function(){var sb=document.getElementById('sidebar').getBoundingClientRect();var bs=Array.from(document.querySelectorAll('#search-row > *, #mode-row > button')).map(function(b){return b.getBoundingClientRect()});return {all:bs.every(function(r){return r.left>=sb.left-1&&r.right<=sb.right+1}),n:bs.length,moved:document.getElementById('side-scroll').scrollLeft>0}})()");
     await q("localStorage.clear(); true");
@@ -799,7 +801,7 @@ checks['AC-75'] = async (cdp) => {
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
-      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8 && outerLeft === 0 && farRight.all && farRight.moved && farRight.n === 8
+      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8 && outerBefore > 0 && outerLeft === 0 && farRight.all && farRight.moved && farRight.n === 8
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
     return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, outerLeft, farRight, dbg, icons, full })];
   } finally { await p.close(); }
@@ -843,6 +845,42 @@ checks['AC-76'] = async (cdp) => {
       && afterReload === D && stored === 'dark' && ratio(qc[0], qc[1]) >= 7
       && afterReset === 'rgb(255, 255, 255)' && storedAfter === null && bad === 'none';
     return [ok, JSON.stringify({ light0, dark1, links, light2, afterReload, stored, qc, ratio: ratio(qc[0], qc[1]).toFixed(1), afterReset, storedAfter, bad })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-77: contents links and the outline really jump (emoji, &, ?, duplicate headings)
+checks['AC-77'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/toc.md');
+  try {
+    const q = (e) => p.ev(e);
+    const topOf = (text, nth = 0) => q(`(function(){var hs=Array.from(document.querySelectorAll('#preview h1,#preview h2,#preview h3')).filter(function(h){return h.textContent.indexOf(${JSON.stringify(text)})===0});var h=hs[${nth}];if(!h)return 'no-heading';var m=document.getElementById('main').getBoundingClientRect();return Math.round(h.getBoundingClientRect().top-m.top)+0})()`);
+    const results = {};
+    const near = (v) => { v = Number(v); return v >= -2 && v <= 80; };
+    // the document's own contents links
+    for (const [href, text, nth] of [['#executive-summary', 'Executive Summary', 0], ['#-automation-mode', '🤖 Automation Mode', 0], ['#how-to-choose', 'How to Choose?', 0], ['#threat-detection--response', '🛡️ Threat', 0], ['#repeat-1', 'Repeat', 1], ['#%EF%B8%8F-threat-detection--response', '🛡️ Threat', 0]]) {
+      await q("document.getElementById('main').scrollTop = 0; true");
+      await q(`(function(){var a=document.querySelector('#preview a[data-anchor=${JSON.stringify(decodeURIComponent(href.slice(1)))}]');if(!a)return false;a.click();return true})()`);
+      await sleep(250);
+      results['toc ' + href] = [await topOf(text, nth), await q('location.hash')];
+    }
+    // the floating outline
+    const n = await q("document.querySelectorAll('#outline a').length");
+    results.outlineCount = n;
+    for (const i of [2, 3, 4, 5, 6]) {
+      await q("document.getElementById('main').scrollTop = 0; true");
+      const label = await q(`document.querySelectorAll('#outline a')[${i}].textContent`);
+      await q(`document.querySelectorAll('#outline a')[${i}].click(); true`);
+      await sleep(250);
+      results['outline ' + i] = [label, await q(`(function(){var h=Array.from(document.querySelectorAll('#preview h1[id],#preview h2[id],#preview h3[id]'))[${i}];if(!h)return 'no-heading';var m=document.getElementById('main').getBoundingClientRect();return String(Math.round(h.getBoundingClientRect().top-m.top)+0)})()`)];
+    }
+    // reload with the hash in the address: lands on the heading
+    await p.goto('/?file=docs/toc.md#-automation-mode'); await p.ready();
+    await sleep(300);
+    results.deepLink = await topOf('🤖 Automation Mode');
+    const tocOk = Object.keys(results).filter((k) => k.startsWith('toc ')).every((k) => near(results[k][0]) && results[k][1].length > 1);
+    const outOk = [2, 3, 4, 5, 6].every((i) => near(results['outline ' + i][1]));
+    const ok = tocOk && outOk && results.outlineCount === 8 && near(results.deepLink);
+    return [ok, JSON.stringify(results)];
   } finally { await p.close(); }
 };
 

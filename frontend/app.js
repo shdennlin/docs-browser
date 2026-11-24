@@ -329,9 +329,24 @@
   }
 
   // ------------------------------------------------------------ preview
+  // Heading ids keep the invisible emoji selectors (U+FE0E/U+FE0F) and the joiner (U+200D), as GitHub's
+  // do, but contents links written by other tools often do not. Look for the exact id first, then for one
+  // that is the same once those characters and leading hyphens are ignored.
+  function anchorKey(s) { return String(s).replace(/[\uFE0E\uFE0F\u200D]/g, '').replace(/^-+/, ''); }
+  function findAnchor(hash) {
+    var exact = document.getElementById(ID_PREFIX + hash);
+    if (exact) return exact;
+    var want = anchorKey(hash);
+    var all = els.preview.querySelectorAll('[id^="' + ID_PREFIX + '"]');
+    for (var i = 0; i < all.length; i++) {
+      if (anchorKey(all[i].id.slice(ID_PREFIX.length)) === want) return all[i];
+    }
+    return null;
+  }
+
   function scrollToHash(hash) {
     if (!hash) return;
-    var target = document.getElementById(ID_PREFIX + hash);
+    var target = findAnchor(hash);
     if (target) target.scrollIntoView({ block: 'start' });
   }
 
