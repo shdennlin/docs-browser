@@ -395,10 +395,17 @@ def ac_26a(ctx):
     files_null = get(PORT, "/files/docs/style.css", headers={"Origin": "null"})[0]
     files_null_post = get(PORT, "/files/docs/style.css", method="POST", headers={"Origin": "null"})[0]
     files_evil = get(PORT, "/files/docs/style.css", headers={"Origin": "http://evil.example"})[0]
-    d11_ok = (files_null, files_null_post, files_evil) == (200, 403, 403)
+    files_null_head = get(PORT, "/files/docs/style.css", method="HEAD", headers={"Origin": "null"})[0]
+    shell_null = get(PORT, "/", headers={"Origin": "null"})[0]            # not /files/: stays strict
+    files_noslash_null = get(PORT, "/files", headers={"Origin": "null"})[0]
+    files_upper_null = get(PORT, "/files/docs/style.css", headers={"Origin": "NULL"})[0]  # only the exact `null`
+    d11_ok = ((files_null, files_null_post, files_evil) == (200, 403, 403)
+              and (files_null_head, shell_null, files_noslash_null, files_upper_null) == (200, 403, 403, 403))
     ok = all(a == b for a, b in got) and hdr_ok and d11_ok
     return ok, (f"got/want={got} 403_headers_ok={hdr_ok} "
-                f"/files Origin null GET={files_null} (want 200) POST={files_null_post} (want 403) evil={files_evil} (want 403)")
+                f"/files Origin null GET={files_null} (200) HEAD={files_null_head} (200) POST={files_null_post} (403) "
+                f"evil={files_evil} (403); null on / ={shell_null} (403), on /files ={files_noslash_null} (403), "
+                f"'NULL' ={files_upper_null} (403)")
 
 
 @ac("AC-28")

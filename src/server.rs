@@ -253,8 +253,10 @@ async fn guard(State(state): State<Arc<AppState>>, req: Request, next: Next) -> 
         }
     }
 
-    if let Some(origin) = req.headers().get(header::ORIGIN) {
-        let origin = origin.to_str().ok().map(|s| s.to_ascii_lowercase());
+    if let Some(origin_header) = req.headers().get(header::ORIGIN) {
+        // The exact value, for the one D11 exception below: only the lowercase `null` browsers send.
+        let raw_origin = origin_header.to_str().ok().map(str::to_owned);
+        let origin = raw_origin.as_ref().map(|s| s.to_ascii_lowercase());
         let same_origin = match (&origin, &host) {
             (Some(o), Some(h)) => o
                 .strip_prefix("http://")
@@ -265,7 +267,7 @@ async fn guard(State(state): State<Arc<AppState>>, req: Request, next: Next) -> 
         // D11: a sandboxed HTML preview has an opaque origin, and some browsers (measured: Chromium 156)
         // send `Origin: null` when it loads its own CSS, scripts and images. Accept that for reading
         // `/files/*` only; `/api/*`, the event stream and every other method stay strictly same-origin.
-        let null_origin_for_files = origin.as_deref() == Some("null")
+        let null_origin_for_files = raw_origin.as_deref() == Some("null")
             && (req.method() == Method::GET || req.method() == Method::HEAD)
             && req.uri().path().starts_with("/files/");
         if !same_origin && !null_origin_for_files {
