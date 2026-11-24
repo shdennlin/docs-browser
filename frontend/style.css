@@ -151,15 +151,10 @@ body.resizing iframe { pointer-events: none; }
 #outline a:hover { background: var(--hover); }
 #outline a.l2 { padding-left: 14px; } #outline a.l3 { padding-left: 24px; } #outline a.l4 { padding-left: 34px; } #outline a.l5 { padding-left: 44px; } #outline a.l6 { padding-left: 54px; }
 
-/* left panel: the list never scrolls sideways. Wrap off = one line per name, cut with an ellipsis (the
-   full path is in the tooltip); the folder buttons sit right after the folder name. */
-#side-scroll { overflow-x: hidden; }
-#sidebar.nowrap #tree a, #sidebar.nowrap #search-results .result-path, #sidebar.nowrap #search-results .result-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
-#sidebar.nowrap #tree .folder-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
-#sidebar.nowrap #tree a.fuzzy-item, #sidebar.nowrap .fuzzy-list a { display: flex; }
-#sidebar.nowrap .fuzzy-list a .badge { flex: none; }
-#sidebar.nowrap .fuzzy-list .fz-dir { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#sidebar.nowrap .fuzzy-list .fz-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* left panel: with Wrap off every name is shown in full on one line and the list scrolls sideways; the
+   toolbar is outside the scrolling part, and the folder buttons sit right after the folder name. */
+#sidebar.nowrap #tree, #sidebar.nowrap #search-results { width: max-content; min-width: 100%; }
+#sidebar.nowrap #tree a, #sidebar.nowrap #tree .folder-name, #sidebar.nowrap #search-results .result-path, #sidebar.nowrap #search-results .result-line { white-space: nowrap; overflow-wrap: normal; }
 #mode-row button#wrap-toggle[aria-pressed="false"] { background: transparent; }
 
 /* settings */

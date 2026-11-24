@@ -772,15 +772,18 @@ checks['AC-75'] = async (cdp) => {
     await sleep(150);
     const spy = await q("(function(){var c=document.querySelectorAll('#outline a.current');var hs=document.querySelectorAll('#preview h2[id]');return {n:c.length,text:c[0]&&c[0].textContent,want:hs[2].textContent}})()");
     await p.media('light');
-    // Wrap off + narrow list + big font: names are cut with an ellipsis, nothing scrolls sideways, tooltips hold the path
+    // Wrap off + narrow list + big font: names are shown in full, the list scrolls sideways, the toolbar stays put
     await q("localStorage.setItem('docs-browser.sidebarWidth','180'); localStorage.setItem('docs-browser.wrapNames','0'); true");
     await p.goto('/?file=README.md'); await p.ready();
     await q("document.getElementById('sidebar').style.fontSize = '26px'; document.querySelector('#tree details[data-dir=\"docs\"]').open = true; true");
     await sleep(200);
-    const pt = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');a.scrollIntoView({block:'center'});var r=a.getBoundingClientRect();return {x:r.left+60,y:r.top+r.height/2}})()");
+    const pt = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');a.scrollIntoView({block:'center'});document.getElementById('side-scroll').scrollLeft=0;var r=a.getBoundingClientRect();return {x:r.left+60,y:r.top+r.height/2}})()");
     await p.mouse('mousePressed', pt.x, pt.y); await p.mouse('mouseReleased', pt.x, pt.y);   // a real click
     await sleep(400);
-    const cut = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');var s=getComputedStyle(a);var sc=document.getElementById('side-scroll');return {ellipsis:s.textOverflow,nowrap:s.whiteSpace,clipped:a.scrollWidth>a.clientWidth,title:a.title,hscroll:sc.scrollWidth>sc.clientWidth,sl:sc.scrollLeft,tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left-document.getElementById('sidebar').getBoundingClientRect().left)}})()");
+    const names = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');var s=getComputedStyle(a);var sc=document.getElementById('side-scroll');return {nowrap:s.whiteSpace,textOverflow:s.textOverflow,clipped:a.scrollWidth>a.clientWidth,title:a.title,hscroll:sc.scrollWidth>sc.clientWidth,sl:sc.scrollLeft}})()");
+    // scrolled far to the right: every control of the toolbar is still in view and in place
+    await q("document.getElementById('side-scroll').scrollLeft = 10000; true");
+    const far = await q("(function(){var sb=document.getElementById('sidebar').getBoundingClientRect();var tb=document.getElementById('toolbar').getBoundingClientRect();var ok=Array.from(document.querySelectorAll('#search-row > *, #mode-row > button')).every(function(b){var r=b.getBoundingClientRect();return r.left>=sb.left-1&&r.right<=sb.right+1});return {allIn:ok,moved:document.getElementById('side-scroll').scrollLeft>0,tb:Math.round(tb.left-sb.left)}})()");
     // the folder buttons sit right after the folder name, not at the far right
     const adj = await q("(function(){var s=document.querySelector('#tree details[data-dir=\"docs\"] > summary');var n=s.querySelector('.folder-name').getBoundingClientRect();var b=s.querySelector('.folder-btn').getBoundingClientRect();return {nameW:Math.round(n.width),gap:Math.round(b.left-n.right),title:s.querySelector('.folder-name').title}})()");
     // the outer panel must never scroll (a browser may do it on focus); it snaps back at once
@@ -788,7 +791,6 @@ checks['AC-75'] = async (cdp) => {
     await sleep(100);
     const outerLeft = await q("document.getElementById('sidebar').scrollLeft");
     await q("document.getElementById('probe-wide').remove(); true");
-    const allIn = await q("(function(){var sb=document.getElementById('sidebar').getBoundingClientRect();return Array.from(document.querySelectorAll('#search-row > *, #mode-row > button')).every(function(b){var r=b.getBoundingClientRect();return r.left>=sb.left-1&&r.right<=sb.right+1})})()");
     await q("localStorage.clear(); true");
     // HTML fills the right panel
     await p.goto('/?file=docs/flow.html'); await p.ready();
@@ -799,11 +801,12 @@ checks['AC-75'] = async (cdp) => {
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
-      && cut.ellipsis === 'ellipsis' && cut.nowrap === 'nowrap' && cut.clipped && cut.title === 'docs/search-target.md' && cut.hscroll === false && cut.sl === 0 && cut.tb === 8
+      && names.nowrap === 'nowrap' && names.textOverflow !== 'ellipsis' && names.clipped === false && names.title === 'docs/search-target.md' && names.hscroll === true && names.sl === 0
+      && far.allIn === true && far.moved === true && far.tb === 8
       && adj.nameW < 90 && adj.gap >= 0 && adj.gap <= 10 && adj.title === 'docs'
-      && outerBefore > 0 && outerLeft === 0 && allIn === true
+      && outerBefore > 0 && outerLeft === 0
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, curStyle, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, outerLeft, cut, adj, allIn, icons, full })];
+    return [ok, JSON.stringify({ outline, pinned, curStyle, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, outerLeft, names, far, adj, icons, full })];
   } finally { await p.close(); }
 };
 

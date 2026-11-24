@@ -754,7 +754,7 @@
   function setWrap(on, save) {
     $('#sidebar').classList.toggle('nowrap', !on);
     wrapBtn.setAttribute('aria-pressed', String(on));
-    wrapBtn.title = on ? 'Long names wrap (click: one line, cut with \u2026)' : 'One line per name, cut with \u2026 (click: wrap)';
+    wrapBtn.title = on ? 'Long names wrap (click: one line per name)' : 'One line per name, scroll sideways (click: wrap)';
     var cw = $('#set-wrap'); if (cw) cw.checked = on;
     if (save) { try { localStorage.setItem(WRAP_KEY, on ? '1' : '0'); } catch (e) { /* storage may be off */ } }
   }
