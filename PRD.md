@@ -19,6 +19,7 @@
 | v1.4.9 (2026-11-24) | CP-5: unreadable directory exits 2; startup, warning and error paths are escaped; log writes ignore a closed stderr; `--verbose` omits the query string; `--open` uses a detached opener; AC-37, 60, 67, 69 strengthened; README install path (9.1, 9.3, 13) |
 | v1.4.10 (2026-11-24) | AC-26c and AC-27 use ports of their own: a shared port made AC-26c fail in a full run only (13) |
 | v1.4.11 (2026-11-24) | D11, approved by the user: `Origin: null` is accepted for GET and HEAD on `/files/*` only, because Chromium 156 sends it for the assets of a sandboxed HTML preview and the strict rule broke them; found only when the suite ran with Chromium inside the Linux container (12.1, 15, AC-26a, AC-26b) |
+| v1.4.12 (2026-11-24) | AC-45 also runs two interleavings deterministically, with the test delivering `changed`, `removed` and `tree` events itself through a fake EventSource: a pending re-render must not overwrite "no longer exists", and a 404 must mark the file missing so a later `tree` event restores it (8.4, 8.5) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 

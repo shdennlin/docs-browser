@@ -125,7 +125,7 @@ async function launchChrome() {
 }
 
 // ---------------------------------------------------------------- page helper
-async function openPage(cdp, url, { waitReady = true, base = BASE } = {}) {
+async function openPage(cdp, url, { waitReady = true, base = BASE, fakeEventSource = false } = {}) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const contexts = [];
@@ -146,6 +146,12 @@ async function openPage(cdp, url, { waitReady = true, base = BASE } = {}) {
   // Collect postMessage reports sent by the fixture page inside the sandboxed iframe.
   await s('Page.addScriptToEvaluateOnNewDocument', { source:
     "window.__reports = []; window.addEventListener('message', function (e) { if (e.data && e.data.type === 'fixture-report') window.__reports.push(e.data); });" });
+  if (fakeEventSource) {
+    // Test-only: the page gets an EventSource that never connects. The test then delivers events itself,
+    // at exact moments, so interleavings that depend on server timing can be made deterministic.
+    await s('Page.addScriptToEvaluateOnNewDocument', { source:
+      "window.__es = []; window.EventSource = function (url) { this.url = url; this.readyState = 1; window.__es.push(this); };" });
+  }
   const page = {
     targetId, sessionId, contexts,
     async ev(expression, contextId) {
@@ -365,6 +371,55 @@ checks['AC-44'] = async (cdp) => {
   return [!!loads, `iframe load events after the edit=${loads}`];
 };
 
+// The same behaviour as the AC-45 steps above, but with the events delivered by the test at exact moments
+// (a fake EventSource), so it does not depend on how the server's debounce lines up with the client's.
+async function deterministicRaces(cdp) {
+  const emit = (p, ev) => p.ev(`window.__es[0].onmessage({ data: ${JSON.stringify(JSON.stringify(ev))} }); true`);
+  const out = { staleTimer: null, notFoundThenCreated: null };
+
+  // A: `changed` arrives (a 250 ms re-render timer starts), then the file is deleted and `removed`
+  // arrives before the timer fires. The timer must not turn "no longer exists" into an error page, and
+  // the preview must come back when the file returns.
+  const relA = 'docs/live-45-race.md';
+  ops.write(fx(relA), '# Race A\n');
+  let p = await openPage(cdp, '/?file=' + relA, { fakeEventSource: true });
+  try {
+    await emit(p, { type: 'changed', path: relA });
+    ops.remove(fx(relA));
+    await emit(p, { type: 'removed', path: relA });
+    await sleep(900); // the stale timer would have fired by now
+    const text = await p.ev("(document.querySelector('#preview .state')||{}).textContent");
+    ops.write(fx(relA), '# Race A back\n');
+    await sleep(700); // the real server's watcher must list the file before the client re-reads the tree
+    await emit(p, { type: 'tree' });
+    const back = await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Race A back'"), 3000, 50);
+    out.staleTimer = { stateAfterTimer: text, restored: !!back };
+  } finally {
+    ops.remove(fx(relA));
+    await p.close();
+  }
+
+  // B: a deep link to a file that does not exist yet shows "File not found"; when the file appears and a
+  // `tree` event lists it, the preview must restore itself (a 404 must mark the file as missing).
+  const relB = 'docs/live-45-late.md';
+  ops.remove(fx(relB));
+  p = await openPage(cdp, '/?file=' + relB, { fakeEventSource: true });
+  try {
+    const first = await p.ev("(document.querySelector('#preview .state')||{}).textContent");
+    ops.write(fx(relB), '# Late file\n');
+    await sleep(700);
+    await emit(p, { type: 'tree' });
+    const shown = await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Late file'"), 3000, 50);
+    out.notFoundThenCreated = { first, restored: !!shown };
+  } finally {
+    ops.remove(fx(relB));
+    await p.close();
+  }
+  out.ok = !!(out.staleTimer && out.staleTimer.stateAfterTimer === 'File no longer exists' && out.staleTimer.restored
+    && out.notFoundThenCreated && out.notFoundThenCreated.first === 'File not found' && out.notFoundThenCreated.restored);
+  return out;
+}
+
 checks['AC-45'] = async (cdp) => {
   const rel = 'docs/live-45.md';
   ops.remove(fx(rel));
@@ -391,8 +446,9 @@ checks['AC-45'] = async (cdp) => {
     const stillGone = await p.ev("(document.querySelector('#preview .state')||{}).textContent");
     ops.write(fx(rel), '# Live 45 third\n');
     const back2 = await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Live 45 third'"), 2500, 25);
-    return [!!listed && first === 'Live 45' && !!gone && urlKept && !!back && !!gone2 && goneStates.includes(stillGone) && !!back2,
-      JSON.stringify({ listed: !!listed, first, goneMessage: !!gone, urlKept, restored: !!back, quickDeleteGone: !!gone2, afterWait: stillGone, restoredAgain: !!back2 })];
+    const det = await deterministicRaces(cdp);
+    return [!!listed && first === 'Live 45' && !!gone && urlKept && !!back && !!gone2 && goneStates.includes(stillGone) && !!back2 && det.ok,
+      JSON.stringify({ listed: !!listed, first, goneMessage: !!gone, urlKept, restored: !!back, quickDeleteGone: !!gone2, afterWait: stillGone, restoredAgain: !!back2, deterministic: det })];
   } finally {
     ops.remove(fx(rel));
     await p.close();
