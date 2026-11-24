@@ -1,0 +1,27 @@
+[package]
+name = "docs-browser"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+description = "Zero-config local browser for project documentation (Markdown, Mermaid, HTML)"
+license = "MIT"
+keywords = ["markdown", "docs", "preview", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["/tests/fixtures", "/.claude", "/target"]
+
+[dependencies]
+anyhow = "1.0.105"
+axum = "0.8.9"
+clap = { version = "4.6.9", features = ["derive"] }
+futures-util = "0.3.34"
+mime_guess = "2.0.5"
+notify = "9.0.0"
+notify-debouncer-mini = "0.8.0"
+open = "5.4.5"
+rust-embed = "8.14.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["full"] }
+tokio-stream = "0.1.19"
+tower-http = { version = "0.7.1", features = ["set-header", "trace"] }
+walkdir = "2.5.1"

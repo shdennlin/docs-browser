@@ -8,6 +8,7 @@
 | v1.2 | Architecture switched to Rust (axum + notify + clap + rust-embed) |
 | v1.3 | Target user and platforms, risk register, Host/Origin validation, `/files/*` sandbox header, acceptance criteria, task breakdown |
 | v1.4 | `/files/*` serves an **extension whitelist** only; visibility checked on both the requested and the canonical path and compared case-insensitively; one coherent symlink policy (followed, listed, watched, aliased); event pipeline rebuilt as *update state, then broadcast*; every acceptance criterion owned by exactly one milestone; unit tests separated from acceptance criteria; decisions D1 to D10 |
+| v1.4.1 (2026-11-24) | T-0.3 findings: `follow_symlinks(false)` is required on Linux, real-path events make `aliases` mandatory, ignored directories may still be watched (8.1); debouncer limits, directory detection, `Rescan` API (8.2); drop the watcher on any initial `watch()` error (8.5); new AC-57. Earlier in this revision, M0 measurements folded in: `style-src 'unsafe-inline'` is required by Mermaid (12.5); macOS `canonicalize` returns the on-disk case and APFS keeps the stored Unicode form (12.2); pinned crate versions, `rust-version`, package `exclude` (10.1); `/files//a` added to AC-20; Linux-specific variants for AC-28, AC-63, AC-68, AC-69 and a Linux-run recipe in 13 |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -263,9 +264,10 @@ The server watches the root and pushes events to the browser.
 
 ### 8.1 Watch scope
 
-- The OS watch is registered on the canonical root, recursively. In-root symlink targets lie inside the root and are therefore already covered; no extra watches are registered for them (D10). Symlinks pointing outside the root are never watched.
+- The OS watch is registered on the canonical root, recursively, with `notify::Config::default().with_follow_symlinks(false)` (passed through `notify_debouncer_mini::Config::with_notify_config`). This setting is **required**: measured in T-0.3 (`docs/spikes/T-0.3.md`), on Linux the default `follow_symlinks: true` delivers events for files outside the root, reported as `outlink/o.md`. With `false`, in-root symlink targets are covered by the single root watch and out-of-root targets produce no events, on both macOS and Linux (D10). Measured on the raw `RecommendedWatcher`; the debouncer wiring (`new_debouncer_opt` with `with_notify_config`) was read from source, not run, and is verified by AC-57 in T-4.1.
 - Event paths are mapped to root-relative paths **lexically** (strip the canonical root prefix); `canonicalize` is not used on event paths, because a deleted path cannot be canonicalized.
-- Events whose relative path is not visible (§7.1) are dropped. The implementation should avoid watching ignored directories; whether `notify` allows that per platform is answered by T-0.3.
+- Event paths are **real paths**: with `follow_symlinks(false)` an in-root link target is always reported under its real path (`docs/a.md`, never `link-in/a.md`), so the `aliases` map in §8.2 is mandatory, not an optimisation.
+- Events whose relative path is not visible (§7.1) are dropped. `notify` has no exclude option, so ignored directories are filtered from events but **may still be watched by the OS** (measured on Linux: 208 inotify watches for a tree where only 3 directories are visible). This is accepted for the MVP (a recursive watch also covers directories created later); the watch-limit failure is handled in §8.5. Per-directory non-recursive watches are future work (§14).
 
 ### 8.2 State, classification and aliases
 
@@ -285,6 +287,8 @@ After a debounce window (default 200 ms), each affected relative path is classif
 
 A created, deleted or renamed **directory**, a `notify` rescan or overflow notice, and any watcher error that signals lost events trigger a full rescan.
 
+Details measured in T-0.3: `notify-debouncer-mini` emits only `Any` or `AnyContinuous` plus a path, with no create, modify, remove or rename kind and no file-versus-directory flag. Treat both kinds as "this path was touched". A directory event is recognised by comparing with the snapshot and by `stat` (a path that was a directory in the snapshot and is now missing). A rename arrives as two events (old and new path) and is not paired. A path created and removed inside one window still arrives; the "not in snapshot, missing on disk" row covers it. A rescan is `DebouncedEventBatch::Rescan` (immediate, not debounced; the enum is `#[non_exhaustive]`, so matches need a wildcard arm); on macOS several can arrive in one burst, and the "at most one rebuild at a time" rule in §8.3 coalesces them. The server's own file reads do not trigger events.
+
 Every `changed` and `removed` result is delivered once per **listed path** of that file (using `aliases`), so a viewer of `link-in/a.md` is notified when `docs/a.md` changes.
 
 ### 8.3 Pipeline and SSE stream
@@ -300,7 +304,7 @@ A `tree` event is emitted only **after** the new tree has been swapped in, so a 
 `GET /api/events` is a Server-Sent Events stream:
 
 - Messages are JSON: `{ "type": <t>, "path": "docs/architecture.md" }` where `<t>` is `changed`, `removed`, `tree`, `resync`, `unavailable` or `bye`. `path` is present only for `changed` and `removed`.
-- A keep-alive SSE comment is sent every 15 s.
+- A keep-alive SSE comment is sent every 15 s. (Measured: write to delivered debounced batch is 200 to 224 ms with a 200 ms window; the notify-to-browser budget in the live-reload criteria is therefore at least 300 ms for that leg.)
 - The broadcast channel is bounded. A subscriber that lags receives one `resync`; the client then re-fetches the tree and the open file.
 - The server allows at most 32 concurrent SSE streams; further requests get 503 (§4.1 R12).
 - On SIGINT or SIGTERM the server sends `bye` to every stream, closes them and exits (§9.1). Open streams never block shutdown: a 2 s deadline applies.
@@ -315,7 +319,7 @@ A `tree` event is emitted only **after** the new tree has been swapped in, so a 
 
 ### 8.5 Failure behaviour
 
-- If the OS watcher cannot start (for example the inotify watch limit is reached), the server keeps serving, prints `warning: live reload disabled: <reason>` and sends `{ "type": "unavailable" }` on `/api/events`. The UI shows "Live reload unavailable".
+- If the OS watcher cannot start (for example the inotify watch limit is reached), the server keeps serving, prints `warning: live reload disabled: <reason>` and sends `{ "type": "unavailable" }` on `/api/events`. The UI shows "Live reload unavailable". `watch()` fails synchronously with `notify::ErrorKind::MaxFilesWatch` (display `OS file watch limit reached.`) and a recursive watch can fail partway, leaving a half-registered watcher that silently misses changes: on **any** error from the initial `watch()` the server drops the watcher entirely before reporting unavailable. For `MaxFilesWatch` the warning also suggests raising `fs.inotify.max_user_watches`.
 - If an API request fails or the SSE stream closes, the UI shows "Server unreachable, retrying" and keeps the last rendered content; `EventSource` reconnects automatically and the banner clears after the resync.
 - On `bye` the UI shows "Server stopped".
 
@@ -336,7 +340,7 @@ Options: `--port <N>` (default 3000), `--host <ADDR>` (default `127.0.0.1`), `--
 - Port already in use, permission denied (port below 1024 without privilege), or address not available: `error: cannot bind <addr>:<port>: <reason>`, exit **1**. No automatic fallback to another port.
 - Invalid `--host` or `--port`: clap usage error, exit **2**.
 - `--port 0` asks the OS for a free port; the printed URL shows the real port.
-- `--open`: opens the printed URL in the default browser. With a wildcard host (`0.0.0.0`) it opens `http://127.0.0.1:<port>/`. If opening fails (for example on a headless host), print a warning and continue.
+- `--open`: opens the printed URL in the default browser. With a wildcard host (`0.0.0.0`) it opens `http://127.0.0.1:<port>/`. If opening fails (for example on a headless host), print `warning: could not open a browser for <url>: <reason>` and continue.
 - No configuration file is read.
 - SIGINT or SIGTERM: close SSE streams (§8.3) and exit **0** within 2 s.
 
@@ -362,13 +366,13 @@ The server still starts.
 The deliverable is a **single self-contained binary**, no runtime dependencies:
 
 ```bash
-cargo install --git <repo> --tag vX.Y.Z    # `cargo install docs-browser` only if the crate name is free (§15)
+cargo install --locked --git <repo> --tag vX.Y.Z    # `cargo install --locked docs-browser` only if the crate name is free (§15)
 docs-browser .
 ```
 
 ### 10.1 Crates
 
-Versions are chosen in task T-0.1, written to `Cargo.toml` as minor-pinned requirements, and `Cargo.lock` is committed.
+Versions are chosen in task T-0.1, written to `Cargo.toml` as minor-pinned requirements, and `Cargo.lock` is committed. Measured at T-0.1: axum 0.8.9 (the `/{*path}` wildcard and an SSE route both ran), notify 9.0.0 and notify-debouncer-mini 0.8.0 (both need rustc 1.91, so `rust-version = "1.91"` is set). `Cargo.toml` also sets `exclude = ["/tests/fixtures", "/.claude", "/target"]`: without it `cargo package` follows the fixture symlink `link-out -> /etc` and reads files outside the project (T-0.5).
 
 | Concern | Crate | Notes |
 |---|---|---|
@@ -453,7 +457,7 @@ docs-browser/
 
 ### 10.6 Release and rollback
 
-- Ships as a git tag; users install with `cargo install --git <repo> --tag vX.Y.Z`.
+- Ships as a git tag; users install with `cargo install --locked --git <repo> --tag vX.Y.Z`. `--locked` makes cargo honour the committed `Cargo.lock`, which is what pins exact versions; the requirements in `Cargo.toml` pin only the minor version.
 - There is no server-side state and no migration.
 - **Rollback trigger:** any failure in the smoke subset (AC-01, AC-07a, AC-20, AC-21, AC-25) run against the tagged build. **Rollback** is installing the previous tag.
 - Prebuilt cross-platform binaries are future work (§14).
@@ -549,7 +553,9 @@ Every request that names a file (`/api/file`, `/files/*`, deep-link `?file=`) go
 7. `TARGET` must be a regular file (a directory is denied), and its extension must pass the whitelist for the endpoint (§7.1).
 8. Every denial returns 404 and logs `denied: <reason> <method> <escaped path>` (§9.3).
 
-macOS volumes are usually case-insensitive and normalization-insensitive. Visibility comparisons are case-insensitive on every platform, and both sides of step 5 come from `canonicalize`. T-0.8 records what `canonicalize` returns for case-variant input on macOS.
+Measured in T-0.8 (`docs/spikes/T-0.8.md`): the macOS fixture volume (APFS) is case-insensitive, and `canonicalize` returns the **on-disk spelling** for a case-variant request (`Node_Modules/pkg/index.md` becomes `node_modules/pkg/index.md`, `.GIT/config` becomes `.git/config`), so a case-insensitive visibility check on the canonical path blocks them. On Linux the same inputs fail with NotFound. Visibility comparisons stay case-insensitive on every platform, and both sides of step 5 come from `canonicalize`.
+
+APFS preserves the stored Unicode normalization form and finds a file under either NFC or NFD spelling. Therefore never compare a request string against a `read_dir` name byte-wise; compare canonical paths, or normalize both to NFC for comparison only.
 
 ### 12.3 Symlink policy
 
@@ -574,7 +580,7 @@ img-src 'self' data: https:; frame-src 'self'; connect-src 'self';
 object-src 'none'; base-uri 'none'
 ```
 
-Whether Mermaid needs `'unsafe-inline'` for styles is verified by T-0.4; the policy is tightened if it does not.
+Measured in T-0.4 (`docs/spikes/T-0.4.md`): Mermaid injects an inline `<style>` element and inline `style` attributes, so `style-src` must keep `'unsafe-inline'`. Under a strict `style-src 'self'` it still renders but with 37 CSP violations and unstyled (black) shapes. `script-src 'self'` is sufficient; no `'unsafe-eval'` is needed.
 
 ### 12.6 Vendored JavaScript
 
@@ -590,6 +596,8 @@ Two kinds of checks:
 - **AC-nn** are system-level checks against a running binary (`curl`, browser). Each AC names the **milestone that delivers it** in the `M` column. A browser check is a manual assertion with the expected result stated; T-3.4 tries to automate them with headless Chrome.
 
 `BASE` is `http://127.0.0.1:4100`, started with `docs-browser tests/fixtures/site --port 4100` unless stated.
+
+**Linux runs** (measured in `docs/spikes/host-dependent-acs.md`): run the binary in a Docker container (`rust:1`) on the container's own filesystem, not a bind mount (a macOS folder mounted into a container stays case-insensitive and has no native inotify). Use `docker run --network host`, so the server stays bound to `127.0.0.1` and the Mac's Chrome can reach it with `Host: 127.0.0.1:<port>`; `-p` publishing does not reach a loopback-bound server. The image has no `lsof`, `ss` or `netstat`. The runner is `python3 tests/suite.py`; it prints one `ID | M | status | note` row per criterion on each platform.
 
 ### 13.0 Fixtures
 
@@ -657,7 +665,7 @@ site/
 
 | ID | M | Requirement | Verification | Expected |
 |---|---|---|---|---|
-| AC-20 | M2 | §12.2 traversal | `curl -s -o /dev/null -w '%{http_code}' --path-as-is` for `/files/../../etc/hosts`, `/files/%2e%2e/%2e%2e/etc/hosts`, `/files/%252e%252e/etc/hosts`; and `/api/file?path=../../etc/hosts`, `path=/etc/hosts`, `path=docs%5C..%5C..%5Cetc%5Chosts`, `path=README.md%00` | All `404`; no body contains `localhost` |
+| AC-20 | M2 | §12.2 traversal | `curl -s -o /dev/null -w '%{http_code}' --path-as-is` for `/files/../../etc/hosts`, `/files/%2e%2e/%2e%2e/etc/hosts`, `/files/%252e%252e/etc/hosts`, `/files//a` (leading slash after decoding); and `/api/file?path=../../etc/hosts`, `path=/etc/hosts`, `path=docs%5C..%5C..%5Cetc%5Chosts`, `path=README.md%00` | All `404`; no body contains `localhost` |
 | AC-21 | M2 | §12.3 symlink out | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/link-out/hosts` | `404` |
 | AC-22 | M2 | §12.3 symlink in | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/link-in/architecture.md` | `200` |
 | AC-23 | M2 | §12.2 prefix | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/evil/secret.md` | `404` |
@@ -667,7 +675,7 @@ site/
 | AC-26b | M4 | §12.1 events | `curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' $BASE/api/events` | `403` |
 | AC-26c | M5 | §12.1 non-loopback | Start with `--host 0.0.0.0`; `curl -H 'Host: anything:4101'` (no Origin) then `curl -H 'Host: a:4101' -H 'Origin: http://b:4101'` | `200`; `403` |
 | AC-27 | M5 | §9.2 warning | `docs-browser tests/fixtures/site --host 0.0.0.0 --port 4101` | stderr contains `WARNING` and `exposes`; listens on `0.0.0.0:4101`; process keeps running |
-| AC-28 | M2 | §12.1 default bind | `lsof -nP -iTCP:4100 -sTCP:LISTEN` | `127.0.0.1:4100` only |
+| AC-28 | M2 | §12.1 default bind | `tests/listening.sh 4100` (uses `lsof`; falls back to `/proc/net/tcp` where `lsof` is absent, as in the Linux image) | `127.0.0.1:4100` only |
 | AC-29 | M2 | §11 methods | `curl -s -o /dev/null -w '%{http_code}' -X POST $BASE/api/file`; `-X PUT $BASE/files/x` | `405`; `405` |
 | AC-30 | M2 | §11 CORS | `curl -sI -H 'Origin: http://localhost:9' $BASE/files/docs/style.css \| grep -ic access-control` | `0` |
 | AC-31 | M2 | §12.5 CSP | `curl -sI $BASE/ \| grep -i content-security-policy` | Contains `default-src 'self'` and `object-src 'none'` |
@@ -698,6 +706,7 @@ site/
 | AC-54 | M4 | §8.4 asset reload | Open `docs/flow.html`; edit `docs/style.css` | The iframe reloads within 2 s |
 | AC-55 | M4 | §8.3 order | Loop 100 times: create a file, wait for the `tree` event, immediately `curl /api/tree` | The new file is present in 100 of 100 responses |
 | AC-56 | M4 | §8.3 SSE cap | Open 33 SSE connections | The 33rd gets `503` |
+| AC-57 | M4 | §8.1 out-of-root link | `curl -N $BASE/api/events` while modifying `../site-evil/secret.md` (reached through the fixture symlink `evil`), on Linux and macOS | No event within 3 s (Linux would deliver one with the default `follow_symlinks`) |
 
 ### 13.4 CLI
 
@@ -706,13 +715,13 @@ site/
 | AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser README.md; echo $?` | stderr `error: directory not found: ...` / `not a directory`; exit `2` for both |
 | AC-61 | M5 | §9.1 port busy | Start two instances on port 4100 | Second prints `error: cannot bind 127.0.0.1:4100: ...`; exit `1` |
 | AC-62 | M5 | §9.1 `--port 0` | `docs-browser tests/fixtures/site --port 0` | Startup line shows a non-zero port that answers `200` |
-| AC-63 | M5 | §9.1 `--open` | Run with `--open` (manual) | Default browser opens `http://127.0.0.1:4100/` |
+| AC-63 | M5 | §9.1 `--open` | macOS: run with `--open` (manual). Linux container (no desktop): run with `--open` | macOS: default browser opens `http://127.0.0.1:4100/`. Linux: stderr contains `warning:` and the server still answers `200` |
 | AC-64 | M5 | §9 help/version | `docs-browser --help`; `--version` | Exit `0`; help lists `--port`, `--host`, `--open`, `--include-hidden`, `--verbose` |
 | AC-65 | M5 | §9.1 zero config | Run AC-01 with `HOME=$(mktemp -d)` and an empty cwd | Passes |
 | AC-66 | M5 | §9.3 logging | Run AC-20's requests with and without `--verbose` | `denied:` lines in both; per-request lines only with `--verbose` |
 | AC-67 | M5 | §3.1 targets | Benchmark (T-5.4) on the §3.1 workload | Measured values recorded in the repository; misses listed |
-| AC-68 | M5 | §9.1 wildcard open | `--host 0.0.0.0 --open` (manual) | Browser opens `http://127.0.0.1:<port>/` |
-| AC-69 | M5 | §9.1 bind errors | `docs-browser . --port 80` as an unprivileged user | `error: cannot bind ...`; exit `1` |
+| AC-68 | M5 | §9.1 wildcard open | macOS: `--host 0.0.0.0 --open` (manual). Linux container: same flags | macOS: browser opens `http://127.0.0.1:<port>/`. Linux: the URL printed for opening is `http://127.0.0.1:<port>/` and a `warning:` is printed because no browser can open |
+| AC-69 | M5 | §9.1 bind errors | macOS: `docs-browser . --port 80` as an unprivileged user. Linux: the same inside a container started with `--user 1000 --sysctl net.ipv4.ip_unprivileged_port_start=1024` (without the sysctl, Docker allows the bind, measured) | `error: cannot bind ...`; exit `1` |
 
 ### 13.5 Unit tests
 
@@ -735,6 +744,8 @@ site/
 | UT-15 | M4 | Rebuild coalescing: 10 events during a rebuild | Exactly one extra rebuild; never two in flight |
 | UT-16 | M4 | Rebuild failure | Previous tree kept; no `tree` event; next event retries |
 
+Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
+
 ### 13.6 Coverage matrix
 
 | Requirement | Checked by |
@@ -745,7 +756,7 @@ site/
 | §6, §12.4 HTML isolation | AC-06, AC-07a/b |
 | §7 tree, caps | AC-02, AC-14a/b, UT-08, UT-09, UT-11 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
-| §8 live reload | AC-43 to AC-48, AC-50 to AC-55, UT-12 to UT-16 |
+| §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
 | §8.5 failures | AC-52, UT-14 |
 | §9 CLI | AC-60 to AC-69, AC-01, AC-27 |
 | §9.3 logging | AC-37, AC-66 |
@@ -853,7 +864,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 
 | Task | Description | Depends | Done when |
 |---|---|---|---|
-| T-4.1 | `watch.rs`: watch scope, debounce | T-0.3, T-2.0 | AC-47, AC-48 |
+| T-4.1 | `watch.rs`: watch scope, debounce, `follow_symlinks(false)`, watcher-failure handling | T-0.3, T-2.0 | AC-47, AC-48, AC-57 |
 | T-4.2 | State task: snapshot, classifier, aliases, rebuild-then-broadcast, coalescing, failure handling | T-4.1, T-1.2 | UT-12, UT-15, UT-16, AC-46, AC-53, AC-55 |
 | T-4.3 | `/api/events`: keep-alive, bounded channel, `resync`, `unavailable`, `bye`, 32-stream cap, graceful shutdown, events Origin check | T-4.2 | UT-13, UT-14, AC-26b, AC-50, AC-51, AC-56 |
 | T-4.4 | Client event handling, restore, failure banners, asset reload | T-4.3, T-3.3 | AC-43, AC-44, AC-45, AC-52, AC-54 |
