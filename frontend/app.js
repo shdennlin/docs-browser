@@ -151,6 +151,15 @@
   if (darkQuery.addEventListener) darkQuery.addEventListener('change', function () { if (!document.documentElement.dataset.theme) { applyTheme(null, false); themeChange(); } });
   document.getElementById('theme-toggle').addEventListener('click', function () { switchTheme(effectiveDark() ? 'light' : 'dark', true); });
 
+  // ------------------------------------------------------------ icons
+  // Line icons drawn with currentColor, so they follow the theme. Expand all: two chevrons pointing away
+  // from each other. Collapse all: a framed box with a minus, in front of a second frame.
+  var SVG_OPEN = '<svg class="icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+  var ICON_EXPAND = SVG_OPEN + '<path d="M4.5 5.5 8 2l3.5 3.5"/><path d="M4.5 10.5 8 14l3.5-3.5"/></svg>';
+  var ICON_COLLAPSE = SVG_OPEN + '<path d="M5.5 3.5h7a1 1 0 0 1 1 1v7"/><rect x="2.5" y="5.5" width="8" height="8" rx="1"/><path d="M4.5 9.5h4"/></svg>';
+  $('#expand-all').innerHTML = ICON_EXPAND;
+  $('#collapse-all').innerHTML = ICON_COLLAPSE;
+
   // ------------------------------------------------------------ small DOM helpers
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 
@@ -254,12 +263,12 @@
         nameSpan.textContent = e.name;
         nameSpan.title = dirPath;
         summary.appendChild(nameSpan);
-        [['expand', '\u229E', 'Open this folder and everything in it'], ['collapse', '\u229F', 'Close this folder and everything in it']].forEach(function (b) {
+        [['expand', ICON_EXPAND, 'Open this folder and everything in it'], ['collapse', ICON_COLLAPSE, 'Close this folder and everything in it']].forEach(function (b) {
           var btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'folder-btn';
           btn.dataset.action = b[0];
-          btn.textContent = b[1];
+          btn.innerHTML = b[1];
           btn.title = b[2];
           btn.setAttribute('aria-label', b[2] + ': ' + dirPath);
           btn.addEventListener('click', function (ev) {

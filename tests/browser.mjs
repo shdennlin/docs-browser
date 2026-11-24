@@ -663,9 +663,19 @@ checks['AC-72'] = async (cdp) => {
     const afterExpand = await openCount();
     await p.ev("document.getElementById('collapse-all').click(); true");
     const again = await openCount();
-    const ok = badges['README.md'] === 'MD' && badges['docs/flow.html'] === 'HTML' && badges['docs/architecture.md'] === 'MD'
+    // icons: SVG, no text, drawn in the button's colour (so they follow the theme), expand differs from collapse
+    const icons = await p.ev("(function(){function info(b){var s=b.querySelector('svg');var path=s&&s.querySelector('path, rect');return {svg:!!s,text:b.textContent.trim(),stroke:path&&getComputedStyle(path).stroke,color:getComputedStyle(b).color,markup:s&&s.innerHTML}}var e=info(document.getElementById('expand-all')),c=info(document.getElementById('collapse-all'));var fe=info(document.querySelector('.folder-btn[data-action=expand]')),fc=info(document.querySelector('.folder-btn[data-action=collapse]'));return {e:e,c:c,fe:fe,fc:fc}})()");
+    const iconOk = ['e', 'c', 'fe', 'fc'].every((k) => icons[k].svg && icons[k].text === '' && icons[k].stroke === icons[k].color)
+      && icons.e.markup !== icons.c.markup && icons.e.markup === icons.fe.markup && icons.c.markup === icons.fc.markup;
+    await p.media('dark');
+    await p.goto('/?file=README.md'); await p.ready();
+    const darkStroke = await p.ev("getComputedStyle(document.querySelector('#expand-all svg path')).stroke");
+    await p.media('light');
+    await p.goto('/?file=README.md'); await p.ready();
+    const lightStroke = await p.ev("getComputedStyle(document.querySelector('#expand-all svg path')).stroke");
+    const ok = iconOk && darkStroke !== lightStroke && badges['README.md'] === 'MD' && badges['docs/flow.html'] === 'HTML' && badges['docs/architecture.md'] === 'MD'
       && total >= 2 && afterCollapse === 0 && afterExpand === total && again === 0;
-    return [ok, JSON.stringify({ badges: [badges['README.md'], badges['docs/flow.html']], total, afterCollapse, afterExpand, again })];
+    return [ok, JSON.stringify({ badges: [badges['README.md'], badges['docs/flow.html']], total, afterCollapse, afterExpand, again, iconOk, darkStroke, lightStroke, icons })];
   } finally { await p.close(); }
 };
 

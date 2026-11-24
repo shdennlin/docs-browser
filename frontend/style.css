@@ -200,3 +200,9 @@ body.fullwidth #preview { max-width: none; }
 
 /* a contents link to a heading that does not exist */
 #preview a.dead-link { color: var(--muted); text-decoration: line-through; cursor: not-allowed; }
+
+/* expand/collapse icons */
+#mode-row button svg, .folder-btn svg { display: block; }
+.folder-btn { display: inline-flex; align-items: center; }
+.folder-btn svg { width: 12px; height: 12px; }
+#mode-row #expand-all, #mode-row #collapse-all { display: inline-flex; align-items: center; justify-content: center; }
