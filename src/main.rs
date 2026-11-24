@@ -48,7 +48,8 @@ async fn run() -> anyhow::Result<()> {
     eprintln!("Serving {} at http://{}", root.display(), local);
 
     // Live reload: if the OS watcher cannot start, the server keeps serving (PRD 8.5).
-    let live = watch::init_live(&state, &root, watch::start_watcher);
+    let include_hidden = state.resolver.include_hidden();
+    let live = watch::init_live(&state, &root, |r, tx| watch::start_watcher(r, include_hidden, tx));
     let _watcher_guard = live.map(|(handle, rx)| {
         tokio::spawn(watch::run(Arc::new(watch::Pipeline::new(state.clone())), rx));
         handle
@@ -59,7 +60,8 @@ async fn run() -> anyhow::Result<()> {
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             // Tell every SSE stream to say `bye`, and never wait longer than 2 s for the rest.
-            let _ = shutdown_state.shutdown.send(true);
+            // send_replace stores the value even when no stream is subscribed yet.
+            shutdown_state.shutdown.send_replace(true);
             tokio::spawn(async {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 std::process::exit(0);

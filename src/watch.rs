@@ -90,16 +90,25 @@ pub fn classify(resolver: &Resolver, tree: &TreeState, paths: &HashSet<PathBuf>)
                     removed.extend(listed.iter().cloned());
                     tree_dirty = true;
                 } else {
-                    // A removed directory: every indexed file below it is gone.
+                    // A removed directory: every indexed file below it is gone. A removed symlink
+                    // has no canonical entry of its own, so listed paths are matched as well
+                    // (exactly, or as a prefix for a link to a directory).
                     let prefix = format!("{rel_s}/");
-                    let under: Vec<String> = tree
-                        .aliases
-                        .iter()
-                        .filter(|(canonical, _)| canonical.starts_with(&prefix))
-                        .flat_map(|(_, listed)| listed.iter().cloned())
-                        .collect();
-                    if !under.is_empty() {
-                        removed.extend(under);
+                    let mut gone: Vec<String> = Vec::new();
+                    for (canonical, listed) in &tree.aliases {
+                        if canonical.starts_with(&prefix) {
+                            gone.extend(listed.iter().cloned());
+                        } else {
+                            gone.extend(
+                                listed
+                                    .iter()
+                                    .filter(|l| **l == rel_s || l.starts_with(&prefix))
+                                    .cloned(),
+                            );
+                        }
+                    }
+                    if !gone.is_empty() {
+                        removed.extend(gone);
                         tree_dirty = true;
                     }
                 }
@@ -164,9 +173,10 @@ impl Pipeline {
         // Broadcast only after the state is updated.
         if swapped {
             self.state.send_event(LiveEvent::Tree);
-            if batch.rescan {
-                self.state.send_event(LiveEvent::Resync);
-            }
+        }
+        if batch.rescan {
+            // Events were lost, so clients must re-fetch even if the rebuild failed.
+            self.state.send_event(LiveEvent::Resync);
         }
         for path in classified.removed {
             self.state.send_event(LiveEvent::Removed { path });
@@ -230,13 +240,35 @@ pub fn relevance(event: &Event) -> Relevance {
     }
 }
 
+/// Keeps only paths inside the root that are visible (PRD 7.1).
+pub fn visible_paths(root: &Path, include_hidden: bool, paths: Vec<PathBuf>) -> HashSet<PathBuf> {
+    paths
+        .into_iter()
+        .filter(|p| {
+            p.strip_prefix(root)
+                .map(|rel| rel.as_os_str().is_empty() || visible(rel, include_hidden))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
 /// Starts the recursive watch on the canonical root with `follow_symlinks(false)` (PRD 8.1).
 /// On any error the watcher is dropped entirely, so no half-registered watcher survives.
-pub fn start_watcher(root: &Path, tx: mpsc::UnboundedSender<Batch>) -> Result<WatcherHandle, String> {
+pub fn start_watcher(
+    root: &Path,
+    include_hidden: bool,
+    tx: mpsc::UnboundedSender<Batch>,
+) -> Result<WatcherHandle, String> {
+    let root_owned = root.to_path_buf();
     let handler = move |result: notify::Result<Event>| match result {
         Ok(event) => match relevance(&event) {
             Relevance::Touched => {
-                let _ = tx.send(Batch { paths: event.paths.into_iter().collect(), rescan: false });
+                // The OS still reports events from ignored directories (PRD 8.1); drop them here so a
+                // storm in node_modules or .git never queues anything.
+                let paths = visible_paths(&root_owned, include_hidden, event.paths);
+                if !paths.is_empty() {
+                    let _ = tx.send(Batch { paths, rescan: false });
+                }
             }
             Relevance::Rescan => {
                 let _ = tx.send(Batch { paths: HashSet::new(), rescan: true });
@@ -368,6 +400,46 @@ mod tests {
         assert_eq!(relevance(&at(EventKind::Remove(RemoveKind::File))), Relevance::Touched);
         assert_eq!(relevance(&Event::new(EventKind::Other)), Relevance::Ignore);
         assert_eq!(relevance(&Event::new(EventKind::Other).set_flag(Flag::Rescan)), Relevance::Rescan);
+    }
+
+    #[test]
+    fn ut_12_removed_symlinks_are_classified_by_their_listed_path() {
+        let dir = TestDir::new("ut12link");
+        dir.write("docs/x.md", "# x");
+        dir.symlink("docs", "link-in");
+        dir.symlink("docs/x.md", "one.md");
+        let state = state_for(&dir);
+        let root = state.resolver.root().to_path_buf();
+        let tree = state.tree.read().unwrap().clone();
+
+        // Deleting the link to a directory removes the entries listed through it, not the originals.
+        fs::remove_file(root.join("link-in")).unwrap();
+        let c = classify(&state.resolver, &tree, &set(&[root.join("link-in")]));
+        assert_eq!(c.removed, vec!["link-in/x.md".to_string()]);
+        assert!(c.tree_dirty);
+
+        // Deleting a link to a file removes that listed path only.
+        fs::remove_file(root.join("one.md")).unwrap();
+        let c = classify(&state.resolver, &tree, &set(&[root.join("one.md")]));
+        assert_eq!(c.removed, vec!["one.md".to_string()]);
+        assert!(c.tree_dirty);
+    }
+
+    #[test]
+    fn ut_12_events_in_ignored_directories_are_dropped_before_the_channel() {
+        let root = PathBuf::from("/site");
+        let paths = vec![
+            root.join("docs/a.md"),
+            root.join("node_modules/pkg/i.md"),
+            root.join(".git/HEAD"),
+            root.join(".hidden/h.md"),
+            PathBuf::from("/elsewhere/x.md"),
+        ];
+        let kept = visible_paths(&root, false, paths.clone());
+        assert_eq!(kept, set(&[root.join("docs/a.md")]));
+        // include_hidden opens dot folders, but never the ignore list.
+        let kept = visible_paths(&root, true, paths);
+        assert_eq!(kept, set(&[root.join("docs/a.md"), root.join(".hidden/h.md")]));
     }
 
     #[tokio::test]

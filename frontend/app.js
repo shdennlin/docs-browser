@@ -240,7 +240,7 @@
   async function renderMarkdown(path, hash, token) {
     var res = await fetch('/api/file?path=' + encodeURIComponent(path));
     if (token !== state.token) return;
-    if (res.status === 404) return showState('File not found');
+    if (res.status === 404) { state.missing = true; return showState('File not found'); }
     if (res.status === 415) return showState('Unsupported file type');
     if (res.status === 413) return showState('File too large');
     if (!res.ok) return showState('Could not load the file (HTTP ' + res.status + ')');
@@ -262,7 +262,7 @@
   async function renderHtml(path, token) {
     var head = await fetch('/files/' + L.encodePath(path), { method: 'HEAD' });
     if (token !== state.token) return;
-    if (!head.ok) return showState('File not found');
+    if (!head.ok) { state.missing = true; return showState('File not found'); }
     var frame = document.createElement('iframe');
     frame.className = 'html-frame';
     frame.setAttribute('sandbox', 'allow-scripts allow-popups');
@@ -339,7 +339,7 @@
   });
 
   // ------------------------------------------------------------ live reload (PRD 8)
-  var live = { down: false, timer: null, pendingSince: 0 };
+  var live = { down: false, timer: null, pendingSince: 0, source: null, retry: 0, reconnectTimer: null };
 
   function statusBanner(text) {
     var el = $('#live-status');
@@ -358,7 +358,12 @@
     if (!live.pendingSince) live.pendingSince = now;
     clearTimeout(live.timer);
     var wait = Math.min(250, Math.max(0, 1000 - (now - live.pendingSince)));
-    live.timer = setTimeout(function () {
+    live.timer = setTimeout(function fire() {
+      // Never re-render under a navigation that is still loading; try again shortly.
+      if (document.body.dataset.state === 'rendering') {
+        live.timer = setTimeout(fire, 100);
+        return;
+      }
       live.pendingSince = 0;
       reloadCurrent();
     }, wait);
@@ -386,8 +391,13 @@
         break;
       case 'removed':
         if (ev.path === current) {
+          // Cancel a pending or running re-render first, or it would overwrite this state with an error.
+          clearTimeout(live.timer);
+          live.pendingSince = 0;
+          state.token++;
           state.missing = true;
           showState('File no longer exists');
+          setReady();
         }
         break;
       case 'tree':
@@ -407,8 +417,11 @@
 
   function connectLive() {
     if (!window.EventSource) return;
+    if (live.source) live.source.close();
     var source = new EventSource('/api/events');
+    live.source = source;
     source.onopen = function () {
+      live.retry = 0;
       if (live.down) {
         live.down = false;
         statusBanner('');
@@ -421,14 +434,24 @@
       handleLive(ev);
     };
     source.onerror = function () {
-      // EventSource reconnects by itself; keep the last rendered content and say so.
       live.down = true;
-      statusBanner('Server unreachable, retrying');
+      if (source.readyState === EventSource.CLOSED) {
+        // The browser gave up (for example a 503 because the server is at its stream limit):
+        // reconnect by hand with a growing delay, and do not claim that it is retrying meanwhile.
+        statusBanner('Live reload unavailable');
+        live.retry = Math.min(live.retry + 1, 5);
+        clearTimeout(live.reconnectTimer);
+        live.reconnectTimer = setTimeout(connectLive, 1000 * Math.pow(2, live.retry));
+      } else {
+        // EventSource reconnects by itself; keep the last rendered content and say so.
+        statusBanner('Server unreachable, retrying');
+      }
     };
   }
 
   // ------------------------------------------------------------ start
   (async function start() {
+    connectLive(); // before the first fetch: nothing that changes from here on can be missed
     try {
       await loadTree();
     } catch (e) {
@@ -436,6 +459,5 @@
     }
     var loc = L.parseLocation(location.search, location.hash);
     await showFile(loc.file, loc.hash);
-    connectLive();
   })();
 })();

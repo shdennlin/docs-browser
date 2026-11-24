@@ -376,8 +376,19 @@ checks['AC-45'] = async (cdp) => {
     const urlKept = await p.ev(`location.search === '?file=${rel}'`);
     ops.write(fx(rel), '# Live 45 again\n');
     const back = await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Live 45 again'"), 2500, 25);
-    return [!!listed && first === 'Live 45' && !!gone && urlKept && !!back,
-      JSON.stringify({ listed: !!listed, first, goneMessage: !!gone, urlKept, restored: !!back })];
+    // An edit followed by a delete inside the debounce window must not leave an error page behind:
+    // a re-render still pending for the edit must not overwrite "no longer exists".
+    ops.write(fx(rel), '# Live 45 edited\n');
+    await sleep(300); // the `changed` event has arrived and the client's 250 ms re-render timer is pending
+    ops.remove(fx(rel));
+    const goneStates = ['File no longer exists', 'File not found'];
+    const gone2 = await waitFor(() => p.ev("['File no longer exists', 'File not found'].indexOf((document.querySelector('#preview .state')||{}).textContent) >= 0"), 2500, 25);
+    await sleep(1200); // long enough for the stale re-render and the removal event to both land
+    const stillGone = await p.ev("(document.querySelector('#preview .state')||{}).textContent");
+    ops.write(fx(rel), '# Live 45 third\n');
+    const back2 = await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Live 45 third'"), 2500, 25);
+    return [!!listed && first === 'Live 45' && !!gone && urlKept && !!back && !!gone2 && goneStates.includes(stillGone) && !!back2,
+      JSON.stringify({ listed: !!listed, first, goneMessage: !!gone, urlKept, restored: !!back, quickDeleteGone: !!gone2, afterWait: stillGone, restoredAgain: !!back2 })];
   } finally {
     ops.remove(fx(rel));
     await p.close();
