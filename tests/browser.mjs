@@ -883,6 +883,39 @@ checks['AC-77'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-78: copy the file name
+checks['AC-78'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/'); await p.ready();
+    const hiddenWithoutFile = await q("document.getElementById('copy-name').hidden");
+    await p.goto('/?file=docs/subdir/rel.md'); await p.ready();
+    await q("window.__copied = []; Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied.push(t); return Promise.resolve(); } }, configurable: true }); true");
+    const shown = await q("!document.getElementById('copy-name').hidden");
+    const title = await q("document.getElementById('copy-name').title");
+    await q("document.getElementById('copy-name').click(); true");
+    await sleep(100);
+    const after = await q("({copied: window.__copied, text: document.getElementById('copy-name').textContent, cls: document.getElementById('copy-name').className})");
+    await sleep(1400);
+    const reset = await q("({text: document.getElementById('copy-name').textContent, cls: document.getElementById('copy-name').className})");
+    // an HTML page: button visible, name copied
+    await p.goto('/?file=docs/flow.html'); await p.ready();
+    await q("window.__copied = []; Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied.push(t); return Promise.resolve(); } }, configurable: true }); true");
+    const htmlShown = await q("!document.getElementById('copy-name').hidden");
+    await q("document.getElementById('copy-name').click(); true");
+    await sleep(100);
+    const htmlCopied = await q("window.__copied");
+    // the buttons do not overlap (a file with headings, so the outline button exists)
+    await p.goto('/?file=docs/code.md'); await p.ready();
+    const overlap = await q("(function(){var a=document.getElementById('copy-name').getBoundingClientRect();var b=document.getElementById('outline-toggle');if(document.getElementById('outline-wrap').hidden)return false;var r=b.getBoundingClientRect();return !(a.right<=r.left||r.right<=a.left)})()");
+    const ok = hiddenWithoutFile === true && shown === true && title.includes('rel.md') && after.copied.length === 1 && after.copied[0] === 'rel.md'
+      && after.text === '✓' && after.cls.includes('copied') && !reset.cls.includes('copied') && reset.text !== '✓'
+      && htmlShown === true && htmlCopied.length === 1 && htmlCopied[0] === 'flow.html' && overlap === false;
+    return [ok, JSON.stringify({ hiddenWithoutFile, shown, title, after, reset, htmlShown, htmlCopied, overlap })];
+  } finally { await p.close(); }
+};
+
 // ---------------------------------------------------------------- run
 const wanted = IDS.length ? IDS : Object.keys(checks);
 const out = [];

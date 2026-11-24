@@ -32,6 +32,7 @@
 | v1.4.22 (2026-11-25) | Fix: the search box and buttons no longer scroll away with a sideways-scrolled list (they sit outside the scrolling part); buttons wrap at 180 px (7.3; AC-75) |
 | v1.4.23 (2026-11-25) | File name search is fuzzy, ranked and shows full paths (7.3; AC-73); the outer panel snaps back if a browser scrolls it (AC-75) |
 | v1.4.24 (2026-11-25) | Fix: contents links to headings with an emoji selector (`🛡️`, `🕵️`) did not jump; the anchor lookup now ignores U+FE0E/U+FE0F/U+200D and leading hyphens (7.4; AC-77) |
+| v1.4.25 (2026-11-25) | Copy file name button (7.4; AC-78) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -305,6 +306,7 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 ### 7.4 Outline and settings
 
 - **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
+- **Copy file name:** while a file is open, a `❐` button at the top right, left of the outline button, copies the file name (the last part of the path, for example `rel.md`) to the clipboard and shows `✓` for about a second. It is also there for HTML pages and absent when no file is open.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
@@ -729,6 +731,7 @@ site/
 | AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin), `Section n` entries in the heading colours with exactly one highlighted: the section scrolled to; a folder icon differs between open and closed; with `Wrap` off and a 180 px list, selecting a wide row leaves the list at `scrollLeft` 0 and the toolbar in place, after scrolling the list fully to the right all eight controls of the toolbar are still inside the list, and if the outer panel is scrolled (`scrollLeft = 60`) it is back at 0 at once; a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
 | AC-76 | M3 | §6 theme toggle, quote contrast | Browser with the system in light mode: press the theme button, again, again and reload; `Reset to defaults`; store `purple` and reload | Dark `rgb(40, 42, 54)`, then light, then dark again and still dark after the reload (`docs-browser.theme` is `dark`); the highlight.js sheets switch with it; quote text against the page is at least 7:1; reset gives light and removes the stored value; the bad value is ignored |
 | AC-77 | M3 | §7.4 contents links, outline | Browser `/?file=docs/toc.md` (headings with emoji, `&`, `?` and a duplicate): click each contents link, including `#threat-detection--response` and `#%EF%B8%8F-threat-detection--response` for `🛡️ Threat Detection & Response`; click outline entries 3 to 7; open `/?file=docs/toc.md#-automation-mode` | Every click leaves the heading within 80 px of the top of the panel and sets the `#hash`; the deep link lands on the heading |
+| AC-78 | M3 | §7.4 copy file name | Browser: `/` (no file); `/?file=docs/subdir/rel.md` and click the copy button (clipboard stubbed), wait 1.4 s; `/?file=docs/flow.html` and click it | Hidden without a file; shown with a file; `rel.md` copied once, the button shows `✓` and returns to normal after the wait; `flow.html` copied; the button does not overlap the outline button |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -832,6 +835,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.3 folder buttons, wrap; §7.4 outline, settings | AC-75 |
 | §6 theme toggle | AC-76 |
 | §7.4 contents links and outline jumps | AC-77 |
+| §7.4 copy file name | AC-78 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -939,6 +943,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.7 | Folder buttons, wrap toggle, full-panel HTML, floating outline, settings dialog (added on request) | T-3.6 | AC-75 |
 | T-3.8 | Light/dark toggle button and quote contrast (added on request) | T-3.7 | AC-76 |
 | T-3.9 | Fuzzy ranked file name search, outer-panel snap-back, lenient anchor lookup for emoji headings (added on request) | T-3.8 | AC-73, AC-75, AC-77 |
+| T-3.10 | Copy file name button (added on request) | T-3.9 | AC-78 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

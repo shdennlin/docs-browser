@@ -447,6 +447,7 @@
       $('#main').scrollTop = 0;
     }
     state.current = path;
+    updateCopyButton();
     markSelected(true);
     if (!path) {
       document.title = 'docs-browser';
@@ -741,6 +742,42 @@
   }
   wrapBtn.addEventListener('click', function () { setWrap(wrapBtn.getAttribute('aria-pressed') !== 'true', true); });
   try { setWrap(localStorage.getItem(WRAP_KEY) !== '0', false); } catch (e) { /* storage may be off */ }
+
+  // ------------------------------------------------------------ copy the file name (PRD 7.4)
+  var copyBtn = $('#copy-name');
+  var copyTimer = null;
+  function updateCopyButton() {
+    copyBtn.hidden = !state.current;
+    copyBtn.title = state.current ? 'Copy file name: ' + state.current.split('/').pop() : 'Copy file name';
+  }
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { /* fall through */ }
+      ta.remove();
+      if (ok) resolve(); else reject(new Error('copy failed'));
+    });
+  }
+  copyBtn.addEventListener('click', function () {
+    if (!state.current) return;
+    var name = state.current.split('/').pop();
+    copyText(name).then(function () {
+      copyBtn.classList.add('copied');
+      copyBtn.textContent = '\u2713';
+    }, function () {
+      copyBtn.textContent = '!';
+    }).then(function () {
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(function () { copyBtn.classList.remove('copied'); copyBtn.textContent = '\u2750'; }, 1200);
+    });
+  });
 
   // ------------------------------------------------------------ settings (PRD 5, Settings)
   var WIDE_KEY = 'docs-browser.fullWidth';
