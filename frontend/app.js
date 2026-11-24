@@ -1241,6 +1241,14 @@
     e.preventDefault();
   });
 
+  // ------------------------------------------------------------ version (PRD 7.3)
+  fetch('/api/version').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (!j || typeof j.version !== 'string') return;
+    var el = $('#app-version');
+    el.textContent = 'v' + j.version;
+    el.title = 'docs-browser v' + j.version;
+  }).catch(function () { /* the footer simply stays without a version */ });
+
   // ------------------------------------------------------------ start
   (async function start() {
     connectLive(); // before the first fetch: nothing that changes from here on can be missed

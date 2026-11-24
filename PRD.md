@@ -44,6 +44,7 @@
 | v1.4.34 (2026-11-25) | Dark Mermaid: every plain flowchart node and every sequence-diagram participant gets its own Dracula accent (tinted fill, accent border); nodes the diagram styled itself and the light theme are unchanged (7.4; AC-84; AC-80 no longer expects plain nodes to share one colour) |
 | v1.4.35 (2026-11-25) | Full-screen Mermaid viewer: a button on every diagram opens it over the page; drag pans, the wheel zooms around the pointer, `Esc` closes (7.4; AC-85) |
 | v1.4.36 (2026-11-25) | Release 0.2.0: includes v1.4.34 (dark Mermaid accents) and v1.4.35 (full-screen Mermaid viewer) on top of 0.1.4, plus the README screenshots and the demo docs; `Cargo.toml` and the README install tag updated |
+| v1.4.37 (2026-11-25) | The running server's version is shown at the right end of the bar at the bottom of the file list, from the new `GET /api/version` (7.3, 11; AC-86); the README install command uses the real GitHub URL |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -316,6 +317,8 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 - The wrap button switches long names between wrapping and one line per name shown in full (the list then scrolls sideways). Selecting a file only scrolls the list vertically, never sideways. The search box and the buttons are outside the scrolling part, so they stay in place however far the list is scrolled sideways; the outer panel snaps back to 0 if a browser scrolls it. In a very narrow list (180 px) the buttons wrap onto a second line. Every file and folder has a tooltip with its full path. The folder icon buttons sit right after the folder name, not at the right edge.
 - Each folder has a small icon, closed or open.
 
+- **Version:** the bar at the bottom of the file list shows `v` and the version of the running server (for example `v0.2.0`) at its right end, in small muted text; the tooltip is `docs-browser v0.2.0`. It comes from `GET /api/version`, so after an upgrade a page left open shows the new number only once it is reloaded.
+
 ### 7.4 Outline and settings
 
 - **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted with a background and bold text, without a coloured side border); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. A contents link whose heading does not exist (an out-of-date table of contents) is shown grey and struck through, with the tooltip `找不到這個標題`, and a click does nothing (the address bar is left alone). Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
@@ -586,6 +589,14 @@ GET /api/search?q=needle
 
 Returns `200` with `{ "query", "results": [{ "path", "count", "matches": [{ "line", "before", "hit", "after", "more_before", "more_after" }] }], "truncated", "files_scanned" }`. A missing, too short (under 2 characters) or too long (over 200) `q` returns `400`. The Host and Origin rules (§12.1) apply as for every other route.
 
+### Version
+
+```http
+GET /api/version
+```
+
+Returns `200` with `{ "version": "0.2.0" }`, the version in `Cargo.toml` that the running binary was built from. The Host and Origin rules (§12.1) apply as for every other route.
+
 ### Deep-link route
 
 ```http
@@ -759,6 +770,7 @@ site/
 | AC-83 | M3 | §7.3 layout | Browser `/?file=README.md`: measure the theme button, the settings button, the `Names`/`Contents` switch and the list controls | Theme and settings buttons are in the bottom bar and not in the toolbar; the switch lies inside the search box at its right end (the box has room for it); the list controls are three buttons and do not include the switch; the bottom bar starts with the `?` button (leftmost, at the left and bottom edge of the list), which opens the shortcuts dialog and `Escape` closes it; with two tabs open the active one has a bottom accent line and a lighter background and shows its `×`, the other has no shadow and a hidden `×` |
 | AC-84 | M3 | §7.4 Mermaid colours | Browser `docs/palette.md` (a flowchart with three plain nodes and one `style` node, and a three-participant sequence diagram) in dark and in light mode | Dark: the three plain nodes have three different fills; the `style` node keeps its own fill; each participant has one fill and border colour on both its top and bottom box, different from the other participants; every node text has contrast >= 4.5. Light: plain nodes keep the single theme fill; participants keep the theme's own distinct colours |
 | AC-85 | M3 | §7.4 full-screen diagram | Browser `docs/palette.md` (two diagrams): click the button of the first; wheel up at a point, wheel down, 40 wheel-ups, 80 wheel-downs; `Fit`; drag by (120, -80) px; keys `+`, `0`, `d`, `Escape`; open the second, click `×` | There is one button per diagram and the viewer is closed at first; it opens with the whole diagram inside the window; the zoom grows on wheel up and the diagram point under the pointer does not move (within 1 % of the size); it shrinks on wheel down; it never exceeds 2000 % nor goes below 5 %; `Fit` restores the first zoom; the drag moves the diagram by the same distance without changing its size; `+` zooms, `0` fits, `d` does not switch the theme; `Escape` closes and empties the viewer; the second diagram opens its own copy (3 participants) and `×` closes it |
+| AC-86 | M3 | §7.3, §11 version | Browser `/?file=README.md`: read the footer's version text and its position; `fetch('/api/version')`; the version in `Cargo.toml` | The text is `v` plus the API's version, which equals the `Cargo.toml` version and has the form `x.y.z`; the text lies inside the bottom bar, to the right of the settings button |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -869,6 +881,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.3 sidebar layout | AC-83 |
 | §7.4 Mermaid colours (dark) | AC-84 |
 | §7.4 full-screen diagram | AC-85 |
+| §7.3, §11 version display | AC-86 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -982,6 +995,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.13 | In-page tabs and keyboard shortcuts; theme/settings bar at the bottom, scope switch in the search box (added on request) | T-3.12 | AC-81, AC-82, AC-83 |
 | T-3.14 | Dark Mermaid: a distinct Dracula accent per plain node and per participant (added on request) | T-3.13 | AC-84 |
 | T-3.15 | Full-screen Mermaid viewer with drag and wheel zoom (added on request) | T-3.14 | AC-85 |
+| T-3.16 | Version in the footer and `GET /api/version` (added on request) | T-3.15 | AC-86 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

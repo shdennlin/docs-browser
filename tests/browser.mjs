@@ -1099,6 +1099,25 @@ checks['AC-85'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-86: the footer shows the version of the running server
+checks['AC-86'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  try {
+    const q = (e) => p.ev(e);
+    await waitFor(() => p.ev("!!document.getElementById('app-version').textContent"), 5000, 50);
+    const shown = await q("document.getElementById('app-version').textContent");
+    const api = await q("fetch('/api/version').then(function(r){return r.json()})");
+    const cargo = /^version = "([^"]+)"/m.exec(readFileSync(new URL('../Cargo.toml', import.meta.url), 'utf8'))[1];
+    const geo = await q(`(function(){var f=document.getElementById('sidebar-footer').getBoundingClientRect();var v=document.getElementById('app-version').getBoundingClientRect();
+      var s=document.getElementById('settings-open').getBoundingClientRect();
+      return {inside:v.left>=f.left&&v.right<=f.right+0.5&&v.top>=f.top&&v.bottom<=f.bottom+0.5,rightOfButtons:v.left>=s.right-0.5,w:v.width}})()`);
+    const r = { shown, api, cargo, geo };
+    const ok = shown === 'v' + api.version && api.version === cargo && /^\d+\.\d+\.\d+$/.test(api.version)
+      && geo.inside && geo.rightOfButtons && geo.w > 20;
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
 // ---- AC-81: in-page tabs
 checks['AC-81'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=README.md');

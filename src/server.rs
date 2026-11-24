@@ -211,6 +211,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/file", get(api_file))
         .route("/api/events", get(api_events))
         .route("/api/search", get(api_search))
+        .route("/api/version", get(api_version))
         .route("/files/{*path}", get(files))
         .fallback(fallback)
         .layer(middleware::from_fn_with_state(state.clone(), guard))
@@ -338,6 +339,11 @@ async fn stamp_headers(req: Request, next: Next) -> Response {
 }
 
 // ------------------------------------------------------------------ handlers
+
+/// The version of the running server, shown in the page footer (PRD 7.3).
+async fn api_version() -> Response {
+    Json(serde_json::json!({ "version": env!("CARGO_PKG_VERSION") })).into_response()
+}
 
 async fn api_tree(State(state): State<Arc<AppState>>) -> Response {
     let tree = state.tree.read().expect("tree lock").clone();
