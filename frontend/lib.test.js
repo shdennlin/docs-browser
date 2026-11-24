@@ -99,3 +99,32 @@ test('sidebar width is clamped to 180 px .. 60% of the window and stored values 
     assert.equal(L.parseStoredWidth(bad), null, String(bad));
   }
 });
+
+test('filterTree keeps matching files and their folders, any case, all words', () => {
+  const tree = [
+    { name: 'docs', type: 'directory', children: [
+      { name: 'architecture.md', type: 'file', path: 'docs/architecture.md' },
+      { name: 'API.md', type: 'file', path: 'docs/API.md' },
+      { name: 'sub', type: 'directory', children: [{ name: 'deep.html', type: 'file', path: 'docs/sub/deep.html' }] },
+    ] },
+    { name: 'README.md', type: 'file', path: 'README.md' },
+  ];
+  const names = (r) => JSON.stringify(r.entries);
+  const none = L.filterTree(tree, '  ');
+  assert.equal(none.active, false);
+  assert.equal(none.entries, tree);
+
+  const a = L.filterTree(tree, 'ARCH');
+  assert.equal(a.matches, 1);
+  assert.ok(names(a).includes('architecture.md') && !names(a).includes('README'));
+  assert.deepEqual([...a.open], ['docs']);
+
+  const deep = L.filterTree(tree, 'docs deep'); // every word must be in the path
+  assert.equal(deep.matches, 1);
+  assert.deepEqual([...deep.open].sort(), ['docs', 'docs/sub']);
+
+  assert.equal(L.filterTree(tree, 'zzz').matches, 0);
+  assert.deepEqual(L.filterTree(tree, 'zzz').entries, []);
+  assert.equal(L.filterTree(tree, 'md').matches, 3);
+  assert.deepEqual(L.collectDirs(tree), ['docs', 'docs/sub']);
+});

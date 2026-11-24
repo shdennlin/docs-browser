@@ -1,41 +1,111 @@
-:root { color-scheme: light dark; --side: 300px; --border: #8884; --accent: #0969da; --muted: #6e7781; }
+/* Light mode keeps the system look. Dark mode is the Dracula palette (https://draculatheme.com/contribute). */
+:root {
+  color-scheme: light dark;
+  --side: 300px;
+  --bg: Canvas; --fg: CanvasText; --muted: #6e7781; --border: #8884;
+  --link: #0969da; --hover: #8882;
+  --sel-bg: #0969da; --sel-fg: #fff;
+  --code-bg: #8881; --inline-code-bg: #8882;
+  --banner-bg: #bf87001f; --err: #cf222e; --err-bg: #cf222e14;
+  --mark-bg: #fff8c5; --mark-fg: #1f2328;
+  --badge-md-bg: #ddf4ff; --badge-md-fg: #0550ae; --badge-html-bg: #fff1e5; --badge-html-fg: #953800;
+  --control-bg: #8881;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #282a36; --fg: #f8f8f2; --muted: #6272a4; --border: #44475a;
+    --link: #8be9fd; --hover: #44475a;
+    --sel-bg: #bd93f9; --sel-fg: #282a36;
+    --code-bg: #21222c; --inline-code-bg: #44475a;
+    --banner-bg: #ffb86c26; --err: #ff5555; --err-bg: #ff555526;
+    --mark-bg: #f1fa8c; --mark-fg: #282a36;
+    --badge-md-bg: #bd93f933; --badge-md-fg: #bd93f9; --badge-html-bg: #ffb86c33; --badge-html-fg: #ffb86c;
+    --control-bg: #44475a;
+    /* rainbow headings */
+    --h1: #ff5555; --h2: #ffb86c; --h3: #f1fa8c; --h4: #50fa7b; --h5: #8be9fd; --h6: #bd93f9;
+  }
+}
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
-body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; }
+body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background: var(--bg); color: var(--fg); }
 #app { display: grid; grid-template-columns: var(--side) 6px 1fr; height: 100%; }
 #sidebar { overflow: auto; padding: 8px 4px 24px 8px; font-size: 14px; }
 #main { overflow: auto; padding: 16px 28px 48px; }
+
+/* toolbar */
+#toolbar { position: sticky; top: -8px; z-index: 1; background: var(--bg); padding: 8px 0 6px; margin-top: -8px; }
+#search { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--control-bg); color: var(--fg); font: inherit; }
+#search:focus { outline: 2px solid var(--link); outline-offset: -1px; }
+#mode-row { display: flex; gap: 4px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
+#mode-row .spacer { flex: 1; }
+#mode-row button { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--fg); cursor: pointer; }
+#mode-row button:hover:not(:disabled) { background: var(--hover); }
+#mode-row button[aria-pressed="true"] { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+#mode-row button:disabled { opacity: .4; cursor: default; }
+
+/* tree */
 #tree ul { list-style: none; margin: 0; padding-left: 14px; }
 #tree > ul { padding-left: 2px; }
 #tree summary { cursor: pointer; padding: 1px 2px; user-select: none; }
 #tree a { display: block; padding: 1px 4px; border-radius: 4px; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
-#tree a:hover { background: #8882; }
-#tree a.selected { background: var(--accent); color: #fff; }
-.banner { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: #bf87001f; font-size: 13px; }
+#tree a:hover { background: var(--hover); }
+#tree a.selected { background: var(--sel-bg); color: var(--sel-fg); }
+.badge { display: inline-block; min-width: 2.9em; margin-right: 6px; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1.5; text-align: center; letter-spacing: .02em; vertical-align: 1px; }
+.badge.md { background: var(--badge-md-bg); color: var(--badge-md-fg); }
+.badge.html { background: var(--badge-html-bg); color: var(--badge-html-fg); }
+#tree a.selected .badge { background: #0003; color: inherit; }
+.tree-empty { padding: 8px 4px; color: var(--muted); }
+
+/* content search results */
+#search-results .result { display: block; padding: 6px 6px; margin-bottom: 4px; border-radius: 6px; color: inherit; text-decoration: none; border: 1px solid var(--border); }
+#search-results .result:hover { background: var(--hover); }
+#search-results .result-path { font-weight: 600; overflow-wrap: anywhere; }
+#search-results .result-count { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 6px; }
+#search-results .result-line { color: var(--muted); font-size: 12.5px; margin-top: 2px; overflow-wrap: anywhere; }
+#search-results .lineno { display: inline-block; min-width: 2.2em; color: var(--muted); opacity: .8; }
+#search-results mark { background: var(--mark-bg); color: var(--mark-fg); border-radius: 2px; padding: 0 1px; }
+#search-results .results-note { padding: 8px 4px; color: var(--muted); }
+
+/* banners and states */
+.banner { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--banner-bg); font-size: 13px; }
 #tree-banners .banner { margin: 0 4px 8px 0; }
 .state { margin: 48px auto; max-width: 520px; text-align: center; color: var(--muted); font-size: 16px; }
 .html-frame { width: 100%; height: calc(100vh - 80px); border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+
+/* Markdown */
 #preview { max-width: 920px; }
 #preview.wide { max-width: none; }
 #preview h1, #preview h2 { border-bottom: 1px solid var(--border); padding-bottom: .25em; }
-#preview pre { overflow: auto; padding: 12px; border-radius: 6px; background: #8881; }
+#preview h1 { color: var(--h1, inherit); }
+#preview h2 { color: var(--h2, inherit); }
+#preview h3 { color: var(--h3, inherit); }
+#preview h4 { color: var(--h4, inherit); }
+#preview h5 { color: var(--h5, inherit); }
+#preview h6 { color: var(--h6, inherit); }
+#preview pre { overflow: auto; padding: 12px; border-radius: 6px; background: var(--code-bg); }
+#preview pre code.hljs { padding: 0; background: transparent; }
 #preview code { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-#preview :not(pre) > code { background: #8882; padding: .1em .35em; border-radius: 4px; }
+#preview :not(pre) > code { background: var(--inline-code-bg); padding: .1em .35em; border-radius: 4px; }
 #preview table { border-collapse: collapse; margin: 12px 0; }
 #preview th, #preview td { border: 1px solid var(--border); padding: 4px 10px; }
+#preview blockquote { margin: 12px 0; padding: 0 1em; color: var(--muted); border-left: .25em solid var(--border); }
+#preview hr { border: 0; border-top: 1px solid var(--border); }
 #preview img { max-width: 100%; }
-#preview a { color: var(--accent); }
+#preview a { color: var(--link); }
 #preview .plain-link { color: inherit; }
 #preview .blocked-image { color: var(--muted); font-style: italic; }
 #preview .task-list-item { list-style: none; }
 #preview .task-list-item-checkbox { margin: 0 .5em 0 -1.4em; }
-.mermaid-error { border: 1px solid #cf222e; border-radius: 6px; padding: 8px 12px; margin: 12px 0; background: #cf222e14; }
-.mermaid-error .mermaid-error-title { font-weight: 600; color: #cf222e; margin-bottom: 4px; }
+.mermaid-error { border: 1px solid var(--err); border-radius: 6px; padding: 8px 12px; margin: 12px 0; background: var(--err-bg); }
+.mermaid-error .mermaid-error-title { font-weight: 600; color: var(--err); margin-bottom: 4px; }
 .mermaid-error pre { margin: 6px 0 0; }
 .mermaid { margin: 12px 0; text-align: center; }
+
 [hidden] { display: none !important; }
 #live-status { position: sticky; top: 0; z-index: 2; background: #bf8700cc; color: #fff; }
+
+/* sidebar divider */
 #resizer { cursor: col-resize; touch-action: none; background: linear-gradient(to right, transparent 2px, var(--border) 2px, var(--border) 3px, transparent 3px); }
-#resizer:hover, #resizer:focus-visible, body.resizing #resizer { background: linear-gradient(to right, transparent 1px, var(--accent) 1px, var(--accent) 4px, transparent 4px); outline: none; }
+#resizer:hover, #resizer:focus-visible, body.resizing #resizer { background: linear-gradient(to right, transparent 1px, var(--sel-bg) 1px, var(--sel-bg) 4px, transparent 4px); outline: none; }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing iframe { pointer-events: none; }

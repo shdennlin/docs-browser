@@ -182,6 +182,54 @@
     }
   }
 
+  // ---------------------------------------------------------------- file name filter (PRD 7.3)
+  function queryTokens(query) {
+    return String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  }
+
+  // Keeps the files whose path contains every word of the query (any case) and the folders that lead to
+  // them. `open` lists the folders to show open while the filter is active.
+  function filterTree(entries, query) {
+    var tokens = queryTokens(query);
+    if (!tokens.length) return { active: false, entries: entries, matches: null, open: new Set() };
+    var open = new Set();
+    var matches = 0;
+    function walk(list, prefix) {
+      var kept = [];
+      (list || []).forEach(function (e) {
+        if (e.type === 'directory') {
+          var dirPath = prefix ? prefix + '/' + e.name : e.name;
+          var children = walk(e.children, dirPath);
+          if (children.length) {
+            open.add(dirPath);
+            kept.push({ name: e.name, type: e.type, children: children });
+          }
+        } else {
+          var hay = String(e.path || e.name).toLowerCase();
+          if (tokens.every(function (t) { return hay.indexOf(t) !== -1; })) {
+            matches += 1;
+            kept.push(e);
+          }
+        }
+      });
+      return kept;
+    }
+    return { active: true, entries: walk(entries, ''), matches: matches, open: open };
+  }
+
+  // Every directory path of a /api/tree response.
+  function collectDirs(entries, prefix, out) {
+    out = out || [];
+    (entries || []).forEach(function (e) {
+      if (e.type === 'directory') {
+        var p = prefix ? prefix + '/' + e.name : e.name;
+        out.push(p);
+        collectDirs(e.children, p, out);
+      }
+    });
+    return out;
+  }
+
   // ---------------------------------------------------------------- sidebar width (PRD 5)
   var SIDEBAR_DEFAULT = 300;
   var SIDEBAR_MIN = 180;
@@ -205,6 +253,7 @@
   return {
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT, SIDEBAR_MIN: SIDEBAR_MIN,
     clampSidebarWidth: clampSidebarWidth, parseStoredWidth: parseStoredWidth,
+    queryTokens: queryTokens, filterTree: filterTree, collectDirs: collectDirs,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
     slugify: slugify, makeSlugger: makeSlugger,
     encodePath: encodePath, resolveRelative: resolveRelative, classifyLink: classifyLink,

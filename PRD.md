@@ -23,6 +23,7 @@
 | v1.4.13 (2026-11-24) | Final whole-project review: the release profile of 10.1 is now in `Cargo.toml`; unused `anyhow` and `tokio-stream` removed; a literal `+` in `?file=` stays a plus (5); folders the user closed are not re-opened by a tree update, ancestors open on navigation only (5); a rescan runs once the watcher is registered, so changes during the first scan are not lost (8.1); only an `http://` origin counts as same-origin (12.1); watcher and rebuild error text is escaped (9.3); release 0.1.2 carries D11 |
 | v1.4.14 (2026-11-24) | Resizable sidebar added on request: drag, keyboard, double click, 180 px to 60% limits, remembered in `localStorage` (5, AC-70, T-3.5) |
 | v1.4.15 (2026-11-24) | Sidebar review fixes: a drag follows one pointer and also ends on lost capture and window blur; no jump at the grab point; the chosen width survives a smaller window; a stored value must be a strict integer; AC-70 checks all of it (5) |
+| v1.4.16 (2026-11-24) | Added on request: Dracula theme in dark mode (page, Markdown, code, Mermaid, rainbow headings), `MD`/`HTML` badges, expand/collapse all, file name filter and full-text search (`GET /api/search`, 7.3, 11), default port 4747 instead of 3000 (4 browser ACs, 2 unit tests, T-3.6) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -46,7 +47,7 @@ Primary use case:
 docs-browser .
 ```
 
-Then open `http://127.0.0.1:3000` (the exact URL is printed at startup).
+Then open `http://127.0.0.1:4747` (the exact URL is printed at startup). The default port is 4747 because 3000 and the other usual dev-server ports are often taken; `--port` overrides it.
 
 ### 1.1 Target user, platforms and browsers
 
@@ -111,7 +112,7 @@ The MVP does not provide:
 - Authentication, TLS/HTTPS, or multi-user access
 - Any write operation: editing, uploading, deleting, renaming
 - Git integration
-- Full IDE functionality, full-text search, or a plugin system
+- Full IDE functionality, a search index or ranking, regular expressions or fuzzy search, or a plugin system
 - Preview of file types other than Markdown and HTML
 - Windows support
 - A configuration file or environment-variable configuration (CLI flags only)
@@ -171,7 +172,7 @@ The width of the file list can be changed by dragging the divider between the li
 
 ### Deep-link behaviour
 
-- Selecting a file updates the address bar, e.g. `http://127.0.0.1:3000/?file=docs/architecture.md`.
+- Selecting a file updates the address bar, e.g. `http://127.0.0.1:4747/?file=docs/architecture.md`.
 - Opening that URL (or pressing refresh) loads the app with that file already selected and previewed.
 - The sidebar auto-expands all ancestor folders of the selected file and highlights it.
 - Browser Back/Forward move between previously viewed files.
@@ -203,6 +204,10 @@ Render: headings, tables, task lists, code blocks, links, images, GitHub-flavore
 - Heading anchors use a GitHub-compatible slug: lowercase, punctuation stripped, spaces to `-`, duplicates suffixed `-1`, `-2`; non-ASCII letters (e.g. CJK) are kept. The slug is computed from the heading's rendered text, and the element id carries the prefix `user-content-` (as on GitHub) so that a heading such as `# Tree` cannot clobber an element of the page; URL hashes stay unprefixed. The slug function lives in `frontend/lib.js` and is unit-tested. Opening a file starts at the top of the page; only a hash scrolls, and only after images have loaded (bounded wait).
 
 **Images:** a relative image path is resolved against the directory of the Markdown file that contains it, then rewritten to `/files/...`. `https` images are allowed by the app-shell CSP (§12.5).
+
+### Theme
+
+Light mode keeps the system look. When the system is in dark mode the page uses the Dracula palette: background `#282a36`, text `#f8f8f2`, links `#8be9fd`, code blocks with the Dracula highlight.js style, Mermaid diagrams with Dracula colours, and rainbow headings (h1 to h6 in red, orange, yellow, green, cyan, purple). A change of the system setting while the page is open re-renders the Mermaid diagrams.
 
 ### Mermaid
 
@@ -275,6 +280,17 @@ Any other extension, including no extension, returns 404 even if the path is vis
 - Symlinks whose canonical target is inside the root are listed and followed (D10); others are not listed (§12.3).
 - The scanner stops at 50,000 entries and the UI shows a "Tree truncated" banner. Maximum directory depth is 64.
 - The tree and the file index are built in memory and cached (§10.2).
+
+### 7.3 File name filter and full-text search
+
+The top of the file list has a search box, a `Names` / `Contents` switch and two buttons, `Expand all` and `Collapse all`. The `/` key focuses the box (when no other field has focus) and `Escape` clears it.
+
+- **Names (default):** typing filters the tree to the files whose path contains every word of the query, in any case. The folders that lead to a match are shown open while the filter is active; they are not remembered, so clearing the box restores the folders as the user had them. With no match the list says "No file name matches".
+- **Contents:** typing (after 250 ms, at least two characters) calls `GET /api/search` and replaces the tree with a result list: the path, the number of matching lines and up to three lines with the hit marked and the line number. Clicking a result opens the file. The tree comes back when the switch returns to `Names`. A tree event while a content search is shown repeats the search.
+- `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
+- Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
+
+The server searches on demand, with no index. It walks the listed `.md`, `.markdown`, `.html` and `.htm` files, resolving every one through the resolver (§12.2) with the `/files/*` rules, so hidden folders, the ignore list, out-of-root symlinks and other extensions are never searched. A file reachable through several in-root symlinks is searched once, under its first listed path. Matching is a plain substring test per line, ignoring ASCII case (other letters are matched exactly). HTML is searched by its text with the tags removed. Limits: query 2 to 200 characters, files over 5 MiB skipped, at most 100 result files, 3 lines per file, 256 MiB read per search; hitting a limit sets `truncated`.
 
 ## 8. Live Reload
 
@@ -351,11 +367,11 @@ docs-browser [directory]
 
 `directory` defaults to `.`.
 
-Options: `--port <N>` (default 3000), `--host <ADDR>` (default `127.0.0.1`), `--open`, `--include-hidden`, `--verbose` (alias `-v`), `--help`, `--version`.
+Options: `--port <N>` (default 4747), `--host <ADDR>` (default `127.0.0.1`), `--open`, `--include-hidden`, `--verbose` (alias `-v`), `--help`, `--version`.
 
 ### 9.1 Startup and exit behaviour
 
-- On success, print to stderr a line such as `Serving /abs/root at http://127.0.0.1:3000`.
+- On success, print to stderr a line such as `Serving /abs/root at http://127.0.0.1:4747`.
 - Directory missing, not a directory, or not readable: `error: directory not found: <path>`, `error: not a directory: <path>` or `error: cannot read directory: <path>: <reason>`, exit **2**. An unreadable directory is refused instead of silently serving an empty tree.
 - Port already in use, permission denied (port below 1024 without privilege), or address not available: `error: cannot bind <addr>:<port>: <reason>`, exit **1**. No automatic fallback to another port.
 - Invalid `--host` or `--port`: clap usage error, exit **2**.
@@ -522,6 +538,14 @@ GET /files/docs/example.html
 
 Only whitelisted extensions (§7.1) are served; the `Content-Type` comes from the fixed table in §10.1.
 
+### Search
+
+```http
+GET /api/search?q=needle
+```
+
+Returns `200` with `{ "query", "results": [{ "path", "count", "matches": [{ "line", "before", "hit", "after", "more_before", "more_after" }] }], "truncated", "files_scanned" }`. A missing, too short (under 2 characters) or too long (over 200) `q` returns `400`. The Host and Origin rules (§12.1) apply as for every other route.
+
 ### Deep-link route
 
 ```http
@@ -680,6 +704,10 @@ site/
 | AC-15 | M3 | §6 UTF-8 | Browser `/?file=docs/utf8-bad.md` | Page renders with the banner "File contained invalid UTF-8" |
 | AC-16 | M3 | §6 slugs | `node --test frontend/*.test.js` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
 | AC-70 | M3 | §5 sidebar width | Browser, in a 1280 px window: drag the divider 120 px to the right (and release the pointer capture without a pointerup, then move the mouse once), reload, drag far right and far left; seed `localStorage` with `5000`, `12`, ` 420 ` and `abc`; seed `600`, shrink the window to 800 px and grow it back; double click the divider; focus it and press Right and Left | 300 becomes exactly 420 (stored, and 420 after the reload) and `body.resizing` is cleared after the lost capture; far right gives 768 (60% of the window), far left 180; the seeded values give 768, 180, 300 and 300; 600 becomes 480 in the 800 px window and 600 again afterwards; the double click gives 300; `aria-valuemin/now/max` read `180/300/768`; Right gives 316 and Left gives 300 |
+| AC-71 | M3 | §6 theme | Browser in dark mode `/?file=docs/code.md` then `docs/architecture.md`; then in light mode | Dark: body `rgb(40, 42, 54)` on text `rgb(248, 248, 242)`, h1 `rgb(255, 85, 85)`, h2 `rgb(255, 184, 108)`, links `rgb(139, 233, 253)`, a highlighted keyword in another colour than the text, Mermaid nodes `rgb(68, 71, 90)` and lines `rgb(139, 233, 253)`; light: white background and h1 the same colour as the text |
+| AC-72 | M3 | §7.3 badges, expand/collapse | Browser `/`: read the badges, click `Collapse all`, `Expand all`, `Collapse all` | `README.md` and Markdown files read `MD`, `docs/flow.html` reads `HTML`; the open folders go to 0, to all of them, to 0 |
+| AC-73 | M3 | §7.3 name filter | Browser: type `DOCS/ARCH`, `docs flow`, `zzzz-nothing`, then clear; press `/` | Only `docs/architecture.md` with its folder open; only `docs/flow.html`; "No file name matches"; the full list returns with the folders closed again; the box has focus after `/` |
+| AC-74 | M3 | §7.3, §11 content search | Browser, `Contents` switch: type `x`, `ZEBRA-needle`, click the result, type a text nobody has; `fetch('/api/search?q=a')`, `fetch('/api/search?q=hidden')` | "at least 2 characters"; one result `docs/search-target.md`, line `3:`, hit `zebra-needle`, tree hidden; the preview opens and the URL is `?file=docs/search-target.md`; "No file contains"; status `400`; nothing from `.hidden/` |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -737,7 +765,7 @@ site/
 | AC-61 | M5 | §9.1 port busy | Start two instances on port 4100 | Second prints `error: cannot bind 127.0.0.1:4100: ...`; exit `1` |
 | AC-62 | M5 | §9.1 `--port 0` | `docs-browser tests/fixtures/site --port 0` | Startup line shows a non-zero port that answers `200` |
 | AC-63 | M5 | §9.1 `--open` | macOS: run with `--open`; the runner does this only when `DOCS_BROWSER_SUITE_OPEN=1` is set, because it opens a real tab. Linux container (no desktop): run with `--open` | macOS: the OS accepts the request to open `http://127.0.0.1:<port>/` (no `warning:` on stderr) and the server answers `200`. Linux: stderr contains `warning: could not open a browser for http://127.0.0.1:<port>/` and the server still answers `200` |
-| AC-64 | M5 | §9 help/version | `docs-browser --help`; `--version` | Exit `0`; help lists `--port`, `--host`, `--open`, `--include-hidden`, `--verbose` |
+| AC-64 | M5 | §9 help/version | `docs-browser --help`; `--version` | Exit `0`; help lists `--port` (with `[default: 4747]`), `--host`, `--open`, `--include-hidden`, `--verbose` |
 | AC-65 | M5 | §9.1 zero config | Run AC-01 with `HOME=$(mktemp -d)` and an empty cwd | Passes |
 | AC-66 | M5 | §9.3 logging | Run AC-20's requests with and without `--verbose` | `denied:` lines in both; per-request lines only with `--verbose` |
 | AC-67 | M5 | §3.1 targets | Benchmark (T-5.4) on the §3.1 workload | Measured values recorded in the repository; misses listed |
@@ -764,6 +792,8 @@ site/
 | UT-14 | M4 | Watcher init failure injected | Server keeps running; `unavailable` event sent |
 | UT-15 | M4 | Rebuild coalescing: 10 events during a rebuild | Exactly one extra rebuild; never two in flight |
 | UT-16 | M4 | Rebuild failure | Previous tree kept; no `tree` event; next event retries |
+| UT-17 | M3 | Content search | Finds text in visible Markdown and HTML only (tags ignored, ASCII case folded, ignore list, hidden folders, other extensions, symlinks once, out-of-root and oversized files skipped); snippets cut on character boundaries |
+| UT-18 | M3 | Search query and limits | Query under 2 and over 200 characters refused, trimmed otherwise; 100 files then `truncated` |
 
 Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
 
@@ -777,6 +807,8 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §6 Mermaid and error box | AC-04, AC-05 |
 | §6, §12.4 HTML isolation | AC-06, AC-07a/b |
 | §7 tree, caps | AC-02, AC-14a/b, UT-08, UT-09, UT-11 |
+| §7.3 name filter, search, badges | AC-72, AC-73, AC-74, UT-17, UT-18 |
+| §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
 | §8.5 failures | AC-52, UT-14 |
@@ -796,9 +828,8 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 - Override for the ignore list
 - Polling fallback when the OS watcher is unavailable
 - Browser automation for all browser checks in §13
-- Full-text search, filename search
 - Table of contents
-- Dark mode
+- A manual light/dark switch (the page follows the system setting)
 - Copy code button
 - Image / PDF preview
 - JSON / YAML preview
@@ -881,6 +912,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.2c | HTML iframe preview and the top-level check | T-3.2a | AC-06, AC-07b |
 | T-3.3 | Deep links, history, anchors, not-found, size and truncation states | T-3.2a | AC-12b, AC-14b, AC-40, AC-41, AC-42 |
 | T-3.5 | Resizable sidebar (added after M5, on request): divider, drag, keyboard, double click, limits, `localStorage` | T-3.2a | AC-70 |
+| T-3.6 | Dracula theme, rainbow headings, `MD`/`HTML` badges, expand/collapse all, name filter, full-text search and `GET /api/search`, default port 4747 (added after M5, on request) | T-3.5 | AC-71, AC-72, AC-73, AC-74, UT-17, UT-18, AC-64 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

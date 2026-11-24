@@ -11,6 +11,7 @@ macro_rules! elog {
 }
 
 pub mod resolve;
+pub mod search;
 pub mod server;
 pub mod tree;
 pub mod watch;

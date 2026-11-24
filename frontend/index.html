@@ -3,15 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>docs-browser</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/vendor/highlight-github.min.css">
+  <link rel="stylesheet" href="/vendor/highlight-github.min.css" media="(prefers-color-scheme: light)">
+  <link rel="stylesheet" href="/vendor/highlight-dracula.css" media="(prefers-color-scheme: dark)">
 </head>
 <body data-state="loading">
   <div id="app">
     <aside id="sidebar">
+      <div id="toolbar">
+        <div id="search-row">
+          <input id="search" type="search" placeholder="Search file names  ( / )" aria-label="Search" autocomplete="off" spellcheck="false">
+        </div>
+        <div id="mode-row" role="group" aria-label="Search scope">
+          <button id="mode-names" type="button" aria-pressed="true">Names</button>
+          <button id="mode-contents" type="button" aria-pressed="false">Contents</button>
+          <span class="spacer"></span>
+          <button id="expand-all" type="button" title="Open every folder">Expand all</button>
+          <button id="collapse-all" type="button" title="Close every folder">Collapse all</button>
+        </div>
+      </div>
       <div id="tree-banners"></div>
       <nav id="tree" aria-label="Files"></nav>
+      <div id="search-results" aria-live="polite" hidden></div>
     </aside>
     <div id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the file list" tabindex="0"></div>
     <main id="main">

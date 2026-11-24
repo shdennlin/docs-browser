@@ -84,6 +84,25 @@ head -c 6291456 /dev/zero | tr '\0' 'a' > docs/big.md
 printf '# Bad bytes\n\nbefore \xff\xfe\xfa after\n' > docs/utf8-bad.md
 
 printf '# API\n\nBack to [root](../README.md)\n' > docs/api.md
+cat > docs/search-target.md <<'MD'
+# Search target
+
+This line has the unique word zebra-needle-42 inside it.
+
+Another line without it.
+MD
+cat > docs/code.md <<'MD'
+# Code sample
+
+## Second level
+
+```js
+const answer = 42; // a keyword and a number
+function f() { return answer; }
+```
+
+[a link](./api.md) and `inline code`.
+MD
 printf '# Upper extension\n' > docs/UPPER.MD
 printf '# CJK name\n' > "docs/中文 筆記.md"
 printf '# Relative image\n\n![d](../diagram.svg)\n' > docs/subdir/rel.md

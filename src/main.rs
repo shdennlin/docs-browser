@@ -9,6 +9,9 @@ use docs_browser::resolve::Resolver;
 use docs_browser::server::{escape_log, router, AppState};
 use docs_browser::watch;
 
+/// Not a port that other dev servers like to take (3000, 4000, 5173, 8000, 8080 ...).
+const DEFAULT_PORT: u16 = 4747;
+
 #[derive(Parser)]
 #[command(name = "docs-browser", version, about = "Zero-config local browser for project documentation")]
 struct Cli {
@@ -16,7 +19,7 @@ struct Cli {
     #[arg(default_value = ".")]
     directory: PathBuf,
     /// TCP port (0 asks the OS for a free port)
-    #[arg(long, default_value_t = 3000)]
+    #[arg(long, default_value_t = DEFAULT_PORT)]
     port: u16,
     /// Address to bind (an IP address, or `localhost`)
     #[arg(long, default_value = "127.0.0.1", value_parser = parse_host)]

@@ -160,6 +160,9 @@ async function openPage(cdp, url, { waitReady = true, base = BASE, fakeEventSour
       return r.result.value;
     },
     async goto(u) { await s('Page.navigate', { url: base + u }); },
+    async media(scheme) {
+      await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+    },
     async viewport(w, h) {
       await s('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
     },
@@ -616,6 +619,106 @@ checks['AC-54'] = async (cdp) => {
   const loads = await withEdit('docs/style.css', (c) => c + '\n/* live-54 */\n', async () => waitFor(() => p.ev('window.__loads >= 1 ? window.__loads : null'), 2000, 25));
   await p.close();
   return [!!loads, `iframe load events after editing style.css=${loads}`];
+};
+
+// ---- AC-71: Dracula in dark mode, rainbow headings, light mode unchanged
+checks['AC-71'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    await p.media('dark');
+    await p.goto('/?file=docs/code.md'); await p.ready();
+    const cs = (sel, prop) => p.ev(`getComputedStyle(document.querySelector(${JSON.stringify(sel)}))['${prop}']`);
+    const dark = {
+      bg: await cs('body', 'backgroundColor'), fg: await cs('body', 'color'),
+      h1: await cs('#preview h1', 'color'), h2: await cs('#preview h2', 'color'),
+      kw: await p.ev("(function(){var k=document.querySelector('#preview .hljs-keyword');return k?getComputedStyle(k).color:null})()"),
+      link: await cs('#preview a', 'color'),
+    };
+    await p.goto('/?file=docs/architecture.md'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#preview .mermaid svg')"), 10000, 100);
+    const mer = await p.ev("(function(){var n=document.querySelector('#preview .mermaid svg .node rect, #preview .mermaid svg .node polygon, #preview .mermaid svg .node path');return n?getComputedStyle(n).fill:null})()");
+    const edge = await p.ev("(function(){var e=document.querySelector('#preview .mermaid svg .flowchart-link, #preview .mermaid svg path.flowchart-link');return e?getComputedStyle(e).stroke:null})()");
+    await p.media('light');
+    await p.goto('/?file=docs/code.md'); await p.ready();
+    const light = { bg: await cs('body', 'backgroundColor'), h1: await cs('#preview h1', 'color'), fg: await cs('body', 'color') };
+    const want = { bg: 'rgb(40, 42, 54)', fg: 'rgb(248, 248, 242)', h1: 'rgb(255, 85, 85)', h2: 'rgb(255, 184, 108)', link: 'rgb(139, 233, 253)' };
+    const ok = dark.bg === want.bg && dark.fg === want.fg && dark.h1 === want.h1 && dark.h2 === want.h2 && dark.link === want.link
+      && dark.kw !== null && dark.kw !== dark.fg
+      && mer === 'rgb(68, 71, 90)' && edge === 'rgb(139, 233, 253)'
+      && light.bg !== want.bg && light.h1 === light.fg;
+    return [ok, JSON.stringify({ dark, mer, edge, light })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-72: type badges and expand/collapse all
+checks['AC-72'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  try {
+    const badges = await p.ev("(function(){var o={};document.querySelectorAll('#tree a[data-path]').forEach(function(a){o[a.dataset.path]=(a.querySelector('.badge')||{}).textContent});return o})()");
+    const openCount = () => p.ev("document.querySelectorAll('#tree details[open]').length");
+    const total = await p.ev("document.querySelectorAll('#tree details').length");
+    await p.ev("document.getElementById('collapse-all').click(); true");
+    const afterCollapse = await openCount();
+    await p.ev("document.getElementById('expand-all').click(); true");
+    const afterExpand = await openCount();
+    await p.ev("document.getElementById('collapse-all').click(); true");
+    const again = await openCount();
+    const ok = badges['README.md'] === 'MD' && badges['docs/flow.html'] === 'HTML' && badges['docs/architecture.md'] === 'MD'
+      && total >= 2 && afterCollapse === 0 && afterExpand === total && again === 0;
+    return [ok, JSON.stringify({ badges: [badges['README.md'], badges['docs/flow.html']], total, afterCollapse, afterExpand, again })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-73: file name filter
+checks['AC-73'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  try {
+    const typeIn = (v) => p.ev(`(function(){var i=document.getElementById('search');i.value=${JSON.stringify(v)};i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+    const files = () => p.ev("Array.from(document.querySelectorAll('#tree a[data-path]')).map(function(a){return a.dataset.path})");
+    await p.ev("document.getElementById('collapse-all').click(); true");
+    await typeIn('DOCS/ARCH');
+    const f1 = await files();
+    const opened = await p.ev("document.querySelectorAll('#tree details[open]').length");
+    await typeIn('docs flow');
+    const f2 = await files();
+    await typeIn('zzzz-nothing');
+    const none = await p.ev("(document.querySelector('#tree .tree-empty')||{}).textContent");
+    await typeIn('');
+    const all = (await files()).length;
+    const closedAgain = await p.ev("document.querySelectorAll('#tree details[open]').length");
+    // "/" focuses the box
+    await p.ev("document.activeElement && document.activeElement.blur(); true");
+    await p.key('/', 'Slash', 191);
+    const focused = await p.ev("document.activeElement && document.activeElement.id");
+    const ok = JSON.stringify(f1) === '["docs/architecture.md"]' && opened >= 1
+      && JSON.stringify(f2) === '["docs/flow.html"]' && none === 'No file name matches'
+      && all >= 8 && closedAgain === 0 && focused === 'search';
+    return [ok, JSON.stringify({ f1, opened, f2, none, all, closedAgain, focused })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-74: full-text search
+checks['AC-74'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  try {
+    await p.ev("document.getElementById('mode-contents').click(); true");
+    const typeIn = (v) => p.ev(`(function(){var i=document.getElementById('search');i.value=${JSON.stringify(v)};i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+    await typeIn('x');
+    await waitFor(() => p.ev("/at least 2/.test(document.getElementById('search-results').textContent)"), 3000, 50);
+    await typeIn('ZEBRA-needle');
+    await waitFor(() => p.ev("document.querySelectorAll('#search-results a.result').length > 0"), 5000, 50);
+    const shown = await p.ev("(function(){var r=document.querySelector('#search-results a.result');return {path:r.dataset.path,mark:(r.querySelector('mark')||{}).textContent,line:r.querySelector('.lineno').textContent,treeHidden:document.getElementById('tree').hidden,n:document.querySelectorAll('#search-results a.result').length}})()");
+    await p.ev("document.querySelector('#search-results a.result').click(); true");
+    await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Search target'"), 5000, 50);
+    const url = await p.ev('location.search');
+    await typeIn('nothing-matches-this-text');
+    await waitFor(() => p.ev("/No file contains/.test(document.getElementById('search-results').textContent)"), 5000, 50);
+    // the API: short query and hidden folder
+    const api = await p.ev("(async function(){var a=await fetch('/api/search?q=a');var b=await (await fetch('/api/search?q=hidden')).json();return {short:a.status,hiddenFiles:b.results.map(function(r){return r.path})}})()");
+    const ok = shown.path === 'docs/search-target.md' && shown.mark === 'zebra-needle' && shown.line === '3:' && shown.treeHidden && shown.n === 1
+      && url === '?file=docs/search-target.md' && api.short === 400 && !api.hiddenFiles.some((x) => x.startsWith('.hidden'));
+    return [ok, JSON.stringify({ shown, url, api })];
+  } finally { await p.close(); }
 };
 
 // ---------------------------------------------------------------- run

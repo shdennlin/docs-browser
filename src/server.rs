@@ -154,6 +154,36 @@ pub fn live_events(
     )
 }
 
+async fn api_search(
+    State(state): State<Arc<AppState>>,
+    method: Method,
+    uri: Uri,
+    query: Result<Query<HashMap<String, String>>, QueryRejection>,
+) -> Response {
+    let bad = |why: &str| {
+        log_denied(why, &method, uri.path());
+        StatusCode::BAD_REQUEST.into_response()
+    };
+    let Ok(Query(params)) = query else {
+        return bad("bad-query");
+    };
+    let q = match crate::search::validate(params.get("q").map(String::as_str).unwrap_or("")) {
+        Ok(q) => q,
+        Err(crate::search::BadQuery::TooShort) => return bad("search-query-too-short"),
+        Err(crate::search::BadQuery::TooLong) => return bad("search-query-too-long"),
+    };
+    let tree = state.tree.read().expect("tree lock").clone();
+    let st = state.clone();
+    // Reading files blocks, so the scan runs off the async workers.
+    match tokio::task::spawn_blocking(move || crate::search::search(&st.resolver, &tree, &q)).await {
+        Ok(response) => Json(response).into_response(),
+        Err(e) => {
+            crate::elog!("error: search failed: {}", escape_log(&e.to_string()));
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 async fn api_events(State(state): State<Arc<AppState>>) -> Response {
     let Ok(permit) = state.sse_slots.clone().try_acquire_owned() else {
         crate::elog!("denied: sse-limit GET /api/events");
@@ -180,6 +210,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/tree", get(api_tree))
         .route("/api/file", get(api_file))
         .route("/api/events", get(api_events))
+        .route("/api/search", get(api_search))
         .route("/files/{*path}", get(files))
         .fallback(fallback)
         .layer(middleware::from_fn_with_state(state.clone(), guard))

@@ -491,7 +491,7 @@ def ac_36(ctx):
 # ---------------------------------------------------------------- M3
 CHROME_DEFAULT = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IDS = ["AC-03b", "AC-04", "AC-05", "AC-06", "AC-07b", "AC-09", "AC-10", "AC-12b",
-               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70"]
+               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70", "AC-71", "AC-72", "AC-73", "AC-74"]
 
 
 def run_browser(ctx, base, ids):
@@ -957,6 +957,8 @@ def ac_64(ctx):
     v = run_cli(ctx, ["--version"])
     flags = ["--port", "--host", "--open", "--include-hidden", "--verbose"]
     missing = [f for f in flags if f not in h[1]]
+    if "[default: 4747]" not in h[1]:
+        missing.append("[default: 4747]")
     return h[0] == 0 and v[0] == 0 and not missing and "docs-browser" in v[1], f"help exit={h[0]} missing={missing} version={v[1].strip()!r}"
 
 

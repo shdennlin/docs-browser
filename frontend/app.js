@@ -15,6 +15,9 @@
     current: null,
     token: 0,
     expanded: new Set(),
+    query: '',
+    mode: 'names',
+    filter: { active: false, open: new Set() },
   };
 
   // ------------------------------------------------------------ Markdown renderer
@@ -99,7 +102,32 @@
     return '<pre><code>' + md.utils.escapeHtml(code) + '</code></pre>\n';
   };
 
-  if (window.mermaid) window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+  // Dark mode uses the Dracula palette for diagrams (light mode keeps Mermaid's default theme).
+  var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  function initMermaid() {
+    if (!window.mermaid) return;
+    var cfg = { startOnLoad: false, securityLevel: 'strict' };
+    if (darkQuery.matches) {
+      cfg.theme = 'base';
+      cfg.themeVariables = {
+        darkMode: true, background: '#282a36', fontFamily: 'inherit',
+        primaryColor: '#44475a', primaryTextColor: '#f8f8f2', primaryBorderColor: '#bd93f9',
+        secondaryColor: '#6272a4', secondaryTextColor: '#f8f8f2', secondaryBorderColor: '#8be9fd',
+        tertiaryColor: '#21222c', tertiaryTextColor: '#f8f8f2', tertiaryBorderColor: '#6272a4',
+        lineColor: '#8be9fd', textColor: '#f8f8f2', mainBkg: '#44475a', nodeBorder: '#bd93f9',
+        clusterBkg: '#21222c', clusterBorder: '#6272a4', titleColor: '#ff79c6',
+        edgeLabelBackground: '#282a36', noteBkgColor: '#44475a', noteTextColor: '#f8f8f2',
+        noteBorderColor: '#f1fa8c', actorBkg: '#44475a', actorBorder: '#bd93f9', actorTextColor: '#f8f8f2',
+        actorLineColor: '#6272a4', signalColor: '#f8f8f2', signalTextColor: '#f8f8f2',
+        labelBoxBkgColor: '#44475a', labelBoxBorderColor: '#bd93f9', labelTextColor: '#f8f8f2',
+        loopTextColor: '#f8f8f2', activationBkgColor: '#6272a4', sequenceNumberColor: '#282a36'
+      };
+    }
+    window.mermaid.initialize(cfg);
+  }
+  initMermaid();
+  var themeChange = function () { initMermaid(); if (state.current && !/\.html?$/i.test(state.current)) reloadCurrent(); };
+  if (darkQuery.addEventListener) darkQuery.addEventListener('change', themeChange);
 
   // ------------------------------------------------------------ small DOM helpers
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -125,7 +153,16 @@
   // ------------------------------------------------------------ tree
   function renderTree() {
     clear(els.tree);
-    els.tree.appendChild(buildList(state.tree, ''));
+    var f = L.filterTree(state.tree, state.mode === 'names' ? state.query : '');
+    state.filter = f;
+    if (f.active && !f.entries.length) {
+      var none = document.createElement('div');
+      none.className = 'tree-empty';
+      none.textContent = 'No file name matches';
+      els.tree.appendChild(none);
+      return;
+    }
+    els.tree.appendChild(buildList(f.entries, ''));
     markSelected(false); // a re-render must not re-open a folder the user closed
   }
 
@@ -137,8 +174,9 @@
         var dirPath = prefix ? prefix + '/' + e.name : e.name;
         var details = document.createElement('details');
         details.dataset.dir = dirPath;
-        if (state.expanded.has(dirPath)) details.open = true;
+        if (state.expanded.has(dirPath) || (state.filter.active && state.filter.open.has(dirPath))) details.open = true;
         details.addEventListener('toggle', function () {
+          if (state.filter.active) return; // folders opened by the filter are not remembered
           if (details.open) state.expanded.add(dirPath); else state.expanded.delete(dirPath);
         });
         var summary = document.createElement('summary');
@@ -150,7 +188,12 @@
         var a = document.createElement('a');
         a.href = L.buildUrl(e.path, '');
         a.dataset.path = e.path;
-        a.textContent = e.name;
+        var badge = document.createElement('span');
+        var isHtml = /\.html?$/i.test(e.name);
+        badge.className = 'badge ' + (isHtml ? 'html' : 'md');
+        badge.textContent = isHtml ? 'HTML' : 'MD';
+        a.appendChild(badge);
+        a.appendChild(document.createTextNode(e.name));
         li.appendChild(a);
       }
       ul.appendChild(li);
@@ -175,7 +218,7 @@
     });
     if (link) {
       link.classList.add('selected');
-      link.scrollIntoView({ block: 'nearest' });
+      if (state.mode === 'names') link.scrollIntoView({ block: 'nearest' });
     }
   }
 
@@ -188,6 +231,7 @@
     state.truncated = res.headers.get('x-tree-truncated') === '1';
     if (state.truncated) banner('Tree truncated', els.treeBanners);
     renderTree();
+    if (state.mode === 'contents' && state.query.trim().length >= 2) runSearch();
   }
 
   // ------------------------------------------------------------ preview
@@ -521,6 +565,110 @@
     preferredWidth = saved === null ? L.SIDEBAR_DEFAULT : saved;
     renderSidebar(false);
   })();
+
+  // ------------------------------------------------------------ search and folder buttons (PRD 7.3)
+  var searchInput = $('#search');
+  var modeNames = $('#mode-names');
+  var modeContents = $('#mode-contents');
+  var resultsEl = $('#search-results');
+  var searchSeq = 0;
+  var searchTimer = null;
+
+  function setMode(mode) {
+    state.mode = mode;
+    modeNames.setAttribute('aria-pressed', String(mode === 'names'));
+    modeContents.setAttribute('aria-pressed', String(mode === 'contents'));
+    searchInput.placeholder = mode === 'names' ? 'Search file names  ( / )' : 'Search inside files  ( / )';
+    var contents = mode === 'contents';
+    resultsEl.hidden = !contents;
+    els.tree.hidden = contents;
+    $('#expand-all').disabled = contents;
+    $('#collapse-all').disabled = contents;
+    if (contents) { scheduleSearch(0); } else { clear(resultsEl); renderTree(); markSelected(false); }
+  }
+
+  function note(text) {
+    clear(resultsEl);
+    var d = document.createElement('div');
+    d.className = 'results-note';
+    d.textContent = text;
+    resultsEl.appendChild(d);
+  }
+
+  function scheduleSearch(delay) {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, delay);
+  }
+
+  async function runSearch() {
+    var q = state.query.trim();
+    var seq = ++searchSeq;
+    if ([...q].length < 2) { note(q ? 'Type at least 2 characters' : 'Type to search inside the Markdown and HTML files'); return; }
+    var data;
+    try {
+      var res = await fetch('/api/search?q=' + encodeURIComponent(q));
+      if (seq !== searchSeq) return;
+      if (!res.ok) { note('Search failed (' + res.status + ')'); return; }
+      data = await res.json();
+    } catch (e) { if (seq === searchSeq) note('Search failed: server unreachable'); return; }
+    if (seq !== searchSeq) return;
+    clear(resultsEl);
+    if (!data.results.length) { note('No file contains "' + data.query + '"'); return; }
+    data.results.forEach(function (r) {
+      var a = document.createElement('a');
+      a.className = 'result';
+      a.href = L.buildUrl(r.path, '');
+      a.dataset.path = r.path;
+      var head = document.createElement('div');
+      head.className = 'result-path';
+      head.textContent = r.path;
+      var cnt = document.createElement('span');
+      cnt.className = 'result-count';
+      cnt.textContent = r.count + (r.count === 1 ? ' line' : ' lines');
+      head.appendChild(cnt);
+      a.appendChild(head);
+      r.matches.forEach(function (m) {
+        var line = document.createElement('div');
+        line.className = 'result-line';
+        var no = document.createElement('span');
+        no.className = 'lineno';
+        no.textContent = m.line + ':';
+        line.appendChild(no);
+        line.appendChild(document.createTextNode((m.more_before ? '…' : '') + m.before));
+        var mark = document.createElement('mark');
+        mark.textContent = m.hit;
+        line.appendChild(mark);
+        line.appendChild(document.createTextNode(m.after + (m.more_after ? '…' : '')));
+        a.appendChild(line);
+      });
+      resultsEl.appendChild(a);
+    });
+    if (data.truncated) note('Showing the first ' + data.results.length + ' files; narrow the query to see more');
+    else if (data.results.length) { /* complete */ }
+  }
+
+  searchInput.addEventListener('input', function () {
+    state.query = searchInput.value;
+    if (state.mode === 'names') { renderTree(); } else { scheduleSearch(250); }
+  });
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { searchInput.value = ''; state.query = ''; searchInput.blur(); if (state.mode === 'names') renderTree(); else scheduleSearch(0); }
+  });
+  modeNames.addEventListener('click', function () { setMode('names'); });
+  modeContents.addEventListener('click', function () { setMode('contents'); });
+  document.addEventListener('keydown', function (e) {
+    var t = e.target;
+    var typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); searchInput.focus(); searchInput.select(); }
+  });
+  $('#expand-all').addEventListener('click', function () {
+    state.expanded = new Set(L.collectDirs(state.tree));
+    renderTree();
+  });
+  $('#collapse-all').addEventListener('click', function () {
+    state.expanded = new Set();
+    renderTree();
+  });
 
   // ------------------------------------------------------------ start
   (async function start() {
