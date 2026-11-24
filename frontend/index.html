@@ -14,14 +14,15 @@
     <aside id="sidebar">
       <div id="toolbar">
         <div id="search-row">
-          <input id="search" type="search" placeholder="Search file names  ( / )" aria-label="Search" autocomplete="off" spellcheck="false">
-          <button id="theme-toggle" type="button" aria-label="Switch between light and dark">&#9788;</button>
-          <button id="settings-open" type="button" aria-label="Settings" title="Settings">&#9881;</button>
+          <div id="search-box">
+            <input id="search" type="search" placeholder="Search file names  ( / )" aria-label="Search" autocomplete="off" spellcheck="false">
+            <div id="mode-switch" role="group" aria-label="Search scope">
+              <button id="mode-names" type="button" aria-pressed="true">Names</button>
+              <button id="mode-contents" type="button" aria-pressed="false">Contents</button>
+            </div>
+          </div>
         </div>
-        <div id="mode-row" role="group" aria-label="Search scope">
-          <button id="mode-names" type="button" aria-pressed="true">Names</button>
-          <button id="mode-contents" type="button" aria-pressed="false">Contents</button>
-          <span class="spacer"></span>
+        <div id="mode-row" role="group" aria-label="List controls">
           <button id="expand-all" type="button" title="Expand all folders" aria-label="Expand all folders"></button>
           <button id="collapse-all" type="button" title="Collapse all folders" aria-label="Collapse all folders"></button>
           <button id="wrap-toggle" type="button" aria-pressed="true" title="Wrap long names in the list" aria-label="Wrap long names">&#8629;</button>
@@ -32,13 +33,20 @@
         <nav id="tree" aria-label="Files"></nav>
         <div id="search-results" aria-live="polite" hidden></div>
       </div>
+      <div id="sidebar-footer">
+        <button id="theme-toggle" type="button" aria-label="Switch between light and dark">&#9788;</button>
+        <button id="settings-open" type="button" aria-label="Settings" title="Settings">&#9881;</button>
+      </div>
     </aside>
     <div id="resizer" role="separator" aria-orientation="vertical" aria-label="Resize the file list" tabindex="0"></div>
-    <main id="main">
-      <div id="live-status" class="banner" role="status" hidden></div>
-      <div id="banners"></div>
-      <div id="preview"></div>
-    </main>
+    <div id="content">
+      <div id="tabs" role="tablist" aria-label="Open files" hidden></div>
+      <main id="main">
+        <div id="live-status" class="banner" role="status" hidden></div>
+        <div id="banners"></div>
+        <div id="preview"></div>
+      </main>
+    </div>
     <div id="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
       <div id="settings-card">
         <div id="settings-head"><h2 id="settings-title">Settings</h2><button id="settings-close" type="button" aria-label="Close settings">&times;</button></div>
@@ -46,7 +54,26 @@
         <label><input type="checkbox" id="set-outline"> Keep the outline open</label>
         <label><input type="checkbox" id="set-wide"> Use the full width for Markdown</label>
         <p class="settings-note">Saved in this browser only. The theme follows the system until you press the sun/moon button; Reset to defaults goes back to the system.</p>
+        <button id="settings-shortcuts" type="button">Keyboard shortcuts</button>
         <button id="settings-reset" type="button">Reset to defaults</button>
+      </div>
+    </div>
+    <div id="shortcuts" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title" hidden>
+      <div id="shortcuts-card">
+        <div id="shortcuts-head"><h2 id="shortcuts-title">Keyboard shortcuts</h2><button id="shortcuts-close" type="button" aria-label="Close shortcuts">&times;</button></div>
+        <table id="shortcuts-table">
+          <tr><td><kbd>/</kbd> <kbd>&#8984;K</kbd> <kbd>Ctrl K</kbd></td><td>Search</td></tr>
+          <tr><td><kbd>&#8984;</kbd>/<kbd>Ctrl</kbd> + click, middle click</td><td>Open a file in a new tab</td></tr>
+          <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>Previous / next tab</td></tr>
+          <tr><td><kbd>Alt W</kbd></td><td>Close the tab</td></tr>
+          <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>Scroll down / up</td></tr>
+          <tr><td><kbd>g</kbd> <kbd>G</kbd></td><td>Top / bottom of the page</td></tr>
+          <tr><td><kbd>o</kbd></td><td>Keep the outline open or closed</td></tr>
+          <tr><td><kbd>d</kbd></td><td>Switch light / dark</td></tr>
+          <tr><td><kbd>c</kbd></td><td>Copy the file name</td></tr>
+          <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+        </table>
+        <p class="settings-note">Single keys work when no text field has focus.</p>
       </div>
     </div>
     <div id="top-tools">

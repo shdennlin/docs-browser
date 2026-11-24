@@ -169,9 +169,9 @@ async function openPage(cdp, url, { waitReady = true, base = BASE, fakeEventSour
     async mouse(type, x, y, extra = {}) {
       await s('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
     },
-    async key(key, code, vk) {
-      await s('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk });
-      await s('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
+    async key(key, code, vk, modifiers = 0) {
+      await s('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, modifiers });
+      await s('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk, modifiers });
     },
     async ready(timeout = 10000) {
       return waitFor(() => page.ev("document.body && document.body.dataset.state === 'ready'"), timeout);
@@ -743,7 +743,7 @@ checks['AC-75'] = async (cdp) => {
     const q = (e) => p.ev(e);
     const tops = await q("Array.from(document.querySelectorAll('#mode-row button')).map(function(b){return Math.round(b.getBoundingClientRect().top)})");
     const rowFits = await q("(function(){var r=document.getElementById('mode-row');return r.scrollWidth <= r.clientWidth})()");
-    const oneLine = tops.length === 5 && Math.max(...tops) - Math.min(...tops) <= 2 && rowFits;
+    const oneLine = tops.length === 3 && Math.max(...tops) - Math.min(...tops) <= 2 && rowFits;
     // outline: hidden panel, hover/pin shows it, entries scroll
     const outline = await q("(function(){var w=document.getElementById('outline-wrap');var a=Array.from(document.querySelectorAll('#outline a')).map(function(x){return x.textContent+'|'+x.className});return {shown:!w.hidden,a:a,panel:getComputedStyle(document.getElementById('outline')).display}})()");
     await q("document.getElementById('outline-toggle').click(); true");
@@ -983,6 +983,157 @@ checks['AC-80'] = async (cdp) => {
     const ok = allReadable(dark) && allReadable(light)
       && dark['plain node'].fill === '68,71,90' && dark['plain node'].text === '248,248,242';   // unstyled node untouched
     return [ok, JSON.stringify({ dark, light })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-81: in-page tabs
+checks['AC-81'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  try {
+    const q = (e) => p.ev(e);
+    const tabs = () => q("Array.from(document.querySelectorAll('#tabs .tab')).map(function(t){return (t.classList.contains('active')?'*':'')+t.dataset.path})");
+    const h1 = () => q("(document.querySelector('#preview h1')||{}).textContent");
+    const loc = () => q('location.search');
+    const click = (sel, init) => q(`(function(){var a=document.querySelector(${JSON.stringify(sel)});a.dispatchEvent(new MouseEvent('click',Object.assign({bubbles:true,cancelable:true,button:0},${JSON.stringify(init || {})})));return true})()`);
+    const settle = async (text) => { await waitFor(async () => (await h1()) === text, 5000, 50); await sleep(80); };
+    const r = {};
+    r.first = await tabs();
+    r.barVisible = await q("!document.getElementById('tabs').hidden");
+    // a plain click replaces the active tab
+    await click('#tree a[data-path="docs/architecture.md"]'); await sleep(300);
+    r.replace = await tabs();
+    // a real command-click (modifiers: 4) opens a new tab
+    const pt = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/code.md\"]');var b=a.getBoundingClientRect();return {x:b.left+40,y:b.top+b.height/2}})()");
+    await p.mouse('mousePressed', pt.x, pt.y, { modifiers: 4 }); await p.mouse('mouseReleased', pt.x, pt.y, { modifiers: 4 });
+    await settle('Code sample');
+    r.cmdClick = await tabs(); r.cmdUrl = await loc();
+    // an open file is activated, not opened twice (ctrl-click)
+    await click('#tree a[data-path="docs/architecture.md"]', { ctrlKey: true }); await sleep(300);
+    r.reuse = await tabs();
+    // a link inside the document, command-click: another tab
+    await click('#tree a[data-path="docs/code.md"]'); await sleep(300);   // back to code.md (replaces architecture? no: activates the open tab)
+    await click('#preview a[data-internal="docs/api.md"]', { metaKey: true }); await sleep(400);
+    r.docLink = await tabs();
+    // scroll position is kept per tab
+    await click('#tree a[data-path="docs/outline.md"]', { metaKey: true }); await settle('Outline page');
+    await q("document.getElementById('main').scrollTop = 600; true");
+    await sleep(100);
+    await q("document.querySelector('#tabs .tab[data-path=\"docs/code.md\"]').click(); true"); await settle('Code sample');
+    const switched = await loc();
+    await q("document.querySelector('#tabs .tab[data-path=\"docs/outline.md\"]').click(); true"); await settle('Outline page');
+    await sleep(200);
+    r.scrollBack = await q("Math.round(document.getElementById('main').scrollTop)");
+    r.switched = switched;
+    // a reload keeps the tab list (sessionStorage) and shows the file in the address
+    const before = await tabs();
+    await p.goto('/?file=docs/code.md'); await p.ready(); await sleep(300);
+    r.reload = await tabs(); r.beforeReload = before.map((x) => x.replace('*', ''));
+    // close: the x button, then a middle click, then the rest
+    const n0 = (await tabs()).length;
+    await q("document.querySelector('#tabs .tab:not(.active) .tab-close').click(); true"); await sleep(200);
+    r.closeX = (await tabs()).length === n0 - 1;
+    await q("(function(){var t=document.querySelector('#tabs .tab.active');t.dispatchEvent(new MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}));return true})()"); await sleep(400);
+    r.closeMiddle = await tabs();
+    while ((await tabs()).length) { await q("document.querySelector('#tabs .tab .tab-close').click(); true"); await sleep(250); }
+    r.emptyUrl = await loc();
+    r.emptyText = await q("(document.querySelector('#preview .state')||{}).textContent");
+    r.emptyBar = await q("document.getElementById('tabs').hidden");
+    // duplicate file names get a folder in the label
+    await p.goto('/?file=docs/subdir/rel.md'); await p.ready();
+    await q("(function(){var a=document.querySelector('#tree a[data-path=\"README.md\"]');a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,metaKey:true}));return true})()"); await sleep(300);
+    r.labels = await q("Array.from(document.querySelectorAll('#tabs .tab-name')).map(function(n){return n.textContent})");
+    const ok = r.first.length === 1 && r.first[0] === '*README.md' && r.barVisible === true
+      && JSON.stringify(r.replace) === '["*docs/architecture.md"]'
+      && JSON.stringify(r.cmdClick) === '["docs/architecture.md","*docs/code.md"]' && r.cmdUrl === '?file=docs/code.md'
+      && JSON.stringify(r.reuse) === '["*docs/architecture.md","docs/code.md"]'
+      && r.docLink.length === 3 && r.docLink[2] === '*docs/api.md'
+      && r.switched === '?file=docs/code.md' && r.scrollBack >= 590 && r.scrollBack <= 610
+      && r.reload.length === r.beforeReload.length && r.reload.filter((x) => x.startsWith('*')).join() === '*docs/code.md'
+      && r.closeX === true && r.closeMiddle.length === r.reload.length - 2
+      && r.emptyUrl === '' && /Select a file/.test(r.emptyText) && r.emptyBar === true
+      && r.labels.includes('rel.md') && r.labels.includes('README.md');
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
+// ---- AC-82: keyboard shortcuts
+checks['AC-82'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.media('light');
+    await p.goto('/?file=docs/outline.md'); await p.ready();
+    await q("window.__copied = []; Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied.push(t); return Promise.resolve(); } }, configurable: true }); true");
+    const r = {};
+    const focused = () => q("document.activeElement && document.activeElement.id");
+    const top = () => q("Math.round(document.getElementById('main').scrollTop)");
+    await q("document.activeElement && document.activeElement.blur(); true");
+    await p.key('/', 'Slash', 191); r.slash = await focused();
+    await q("document.activeElement.blur(); true");
+    await p.key('k', 'KeyK', 75, 4); r.cmdK = await focused();                 // Command K
+    await q("document.activeElement.blur(); true");
+    await p.key('k', 'KeyK', 75, 2); r.ctrlK = await focused();                // Control K
+    // typing in the box does not trigger single keys
+    const bg0 = await q("getComputedStyle(document.body).backgroundColor");
+    await p.key('d', 'KeyD', 68);
+    r.typingSafe = (await q("getComputedStyle(document.body).backgroundColor")) === bg0;
+    await q("document.activeElement.blur(); true");
+    // scrolling
+    await p.key('j', 'KeyJ', 74); await sleep(80); r.j = await top();
+    await p.key('j', 'KeyJ', 74); await sleep(80); r.j2 = await top();
+    await p.key('k', 'KeyK', 75); await sleep(80); r.k = await top();
+    await p.key('G', 'KeyG', 71, 8); await sleep(150);
+    r.G = await q("(function(){var m=document.getElementById('main');return m.scrollTop+m.clientHeight>=m.scrollHeight-2})()");
+    await p.key('g', 'KeyG', 71); await sleep(150); r.g = await top();
+    // outline, theme, copy name
+    await p.key('o', 'KeyO', 79); r.o1 = await q("document.getElementById('outline-toggle').getAttribute('aria-pressed')");
+    await p.key('o', 'KeyO', 79); r.o2 = await q("document.getElementById('outline-toggle').getAttribute('aria-pressed')");
+    await p.key('d', 'KeyD', 68); await sleep(100); r.dark = await q("getComputedStyle(document.body).backgroundColor");
+    await p.key('d', 'KeyD', 68); await sleep(100); r.light = await q("getComputedStyle(document.body).backgroundColor");
+    await p.key('c', 'KeyC', 67); await sleep(100); r.copied = await q("window.__copied");
+    // tabs: [ ] and Alt+W
+    await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/code.md\"]');a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,metaKey:true}));return true})()");
+    await sleep(400);
+    r.tabsNow = await q("Array.from(document.querySelectorAll('#tabs .tab')).map(function(t){return (t.classList.contains('active')?'*':'')+t.dataset.path})");
+    await p.key('[', 'BracketLeft', 219); await sleep(400); r.prev = await q('location.search');
+    await p.key(']', 'BracketRight', 221); await sleep(400); r.next = await q('location.search');
+    await p.key('w', 'KeyW', 87, 1); await sleep(400);                        // Alt W closes the active tab
+    r.afterClose = await q("({tabs:document.querySelectorAll('#tabs .tab').length,url:location.search})");
+    // help dialog: ? opens it, keys are ignored while it is open, Escape closes it
+    await p.key('?', 'Slash', 191, 8); await sleep(100);
+    r.help = await q("({open:!document.getElementById('shortcuts').hidden,rows:document.querySelectorAll('#shortcuts-table tr').length})");
+    const t0 = await top(); await p.key('j', 'KeyJ', 74); await sleep(80); r.ignoredWhileOpen = (await top()) === t0;
+    await p.key('Escape', 'Escape', 27); await sleep(100); r.helpClosed = await q("document.getElementById('shortcuts').hidden");
+    const ok = r.slash === 'search' && r.cmdK === 'search' && r.ctrlK === 'search' && r.typingSafe === true
+      && r.j === 80 && r.j2 === 160 && r.k === 80 && r.G === true && r.g === 0
+      && r.o1 === 'true' && r.o2 === 'false' && r.dark === 'rgb(40, 42, 54)' && r.light === 'rgb(255, 255, 255)'
+      && r.copied.length === 1 && r.copied[0] === 'outline.md'
+      && r.tabsNow.length === 2 && r.prev !== r.next && r.afterClose.tabs === 1
+      && r.help.open === true && r.help.rows >= 9 && r.ignoredWhileOpen === true && r.helpClosed === true;
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
+// ---- AC-83: sidebar layout: theme and settings at the bottom, scope switch inside the search box
+checks['AC-83'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  try {
+    const r = await p.ev(`(function(){
+      function R(sel){var b=document.querySelector(sel).getBoundingClientRect();return {l:Math.round(b.left),r:Math.round(b.right),t:Math.round(b.top),b:Math.round(b.bottom)}}
+      var side=R('#sidebar'),foot=R('#sidebar-footer'),theme=R('#theme-toggle'),set=R('#settings-open'),input=R('#search'),sw=R('#mode-switch'),
+          names=R('#mode-names'),cont=R('#mode-contents'),tree=R('#side-scroll'),row=R('#mode-row');
+      return {side:side,foot:foot,theme:theme,set:set,input:input,sw:sw,names:names,cont:cont,tree:tree,
+        inFooter:document.getElementById('sidebar-footer').contains(document.getElementById('theme-toggle'))&&document.getElementById('sidebar-footer').contains(document.getElementById('settings-open')),
+        notInToolbar:!document.getElementById('toolbar').contains(document.getElementById('theme-toggle'))&&!document.getElementById('toolbar').contains(document.getElementById('settings-open')),
+        switchInBox:document.getElementById('search-box').contains(document.getElementById('mode-switch')),
+        pad:parseFloat(getComputedStyle(document.getElementById('search')).paddingRight),swW:sw.r-sw.l,
+        listButtons:document.querySelectorAll('#mode-row button').length,
+        namesInRow:!!document.querySelector('#mode-row #mode-names,#mode-row #mode-contents')}})()`);
+    const ok = r.inFooter && r.notInToolbar && r.foot.b >= r.side.b - 12 && r.theme.t > r.tree.b - 2 && r.set.t > r.tree.b - 2
+      && r.switchInBox && r.sw.l >= r.input.l && r.sw.r <= r.input.r && r.input.r - r.sw.r <= 8 && r.sw.t >= r.input.t && r.sw.b <= r.input.b
+      && r.cont.r <= r.input.r && r.names.r <= r.cont.l + 1 && r.pad >= r.swW
+      && r.listButtons === 3 && r.namesInRow === false;
+    return [ok, JSON.stringify(r)];
   } finally { await p.close(); }
 };
 

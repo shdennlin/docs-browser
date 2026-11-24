@@ -15,6 +15,8 @@
     current: null,
     token: 0,
     expanded: new Set(),
+    tabs: [],      // [{ path, scroll }]
+    active: -1,    // index into tabs, -1 when no file is open
     query: '',
     mode: 'names',
   };
@@ -488,6 +490,10 @@
   async function showFile(path, hash, opts) {
     var keepScroll = !!(opts && opts.keepScroll);
     var savedScroll = $('#main').scrollTop;
+    if (!keepScroll) {
+      if (state.active >= 0 && state.tabs[state.active]) state.tabs[state.active].scroll = savedScroll;
+      adoptTab(path);
+    }
     var token = ++state.token;
     document.body.dataset.state = 'rendering';
     clear(els.banners);
@@ -514,11 +520,114 @@
     }
     if (token === state.token) {
       if (keepScroll) $('#main').scrollTop = savedScroll;
+      else if (opts && typeof opts.scroll === 'number' && !hash) $('#main').scrollTop = opts.scroll;
       setReady();
     }
   }
 
-  function navigate(path, hash) {
+  // ------------------------------------------------------------ tabs (PRD 7.5)
+  var tabsEl = $('#tabs');
+  var TABS_KEY = 'docs-browser.tabs';
+
+  function saveTabs() {
+    try { sessionStorage.setItem(TABS_KEY, JSON.stringify(state.tabs.map(function (t) { return t.path; }))); } catch (e) { /* storage may be off */ }
+  }
+
+  function tabLabel(path) {
+    var parts = path.split('/');
+    var name = parts[parts.length - 1];
+    var same = state.tabs.filter(function (t) { return t.path.split('/').pop() === name; }).length > 1;
+    return same && parts.length > 1 ? parts[parts.length - 2] + '/' + name : name;
+  }
+
+  function renderTabs() {
+    clear(tabsEl);
+    tabsEl.hidden = state.tabs.length === 0;
+    state.tabs.forEach(function (t, i) {
+      var tab = document.createElement('div');
+      tab.className = 'tab' + (i === state.active ? ' active' : '');
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(i === state.active));
+      tab.dataset.index = String(i);
+      tab.dataset.path = t.path;
+      tab.title = t.path;
+      var name = document.createElement('span');
+      name.className = 'tab-name';
+      name.textContent = tabLabel(t.path);
+      var close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'tab-close';
+      close.setAttribute('aria-label', 'Close tab ' + t.path);
+      close.textContent = '×';
+      tab.appendChild(name);
+      tab.appendChild(close);
+      tabsEl.appendChild(tab);
+    });
+    saveTabs();
+  }
+
+  // Called by showFile for every navigation: the file being shown belongs to a tab. An open tab is activated;
+  // otherwise the active tab is replaced (a plain click), or a first tab is made when none is open.
+  function adoptTab(path) {
+    if (!path) { state.active = -1; renderTabs(); return; }
+    var i = state.tabs.findIndex(function (t) { return t.path === path; });
+    if (i === -1) {
+      if (state.active >= 0 && state.tabs[state.active]) { state.tabs[state.active] = { path: path, scroll: 0 }; i = state.active; }
+      else { state.tabs.push({ path: path, scroll: 0 }); i = state.tabs.length - 1; }
+    }
+    state.active = i;
+    renderTabs();
+  }
+
+  function activateTab(i) {
+    var t = state.tabs[i];
+    if (!t || i === state.active) return;
+    history.pushState({}, '', L.buildUrl(t.path, ''));
+    return showFile(t.path, '', { scroll: t.scroll || 0 });
+  }
+
+  function closeTab(i) {
+    if (i < 0 || i >= state.tabs.length) return;
+    var wasActive = i === state.active;
+    state.tabs.splice(i, 1);
+    if (!wasActive) {
+      if (i < state.active) state.active -= 1;
+      renderTabs();
+      return;
+    }
+    var next = state.tabs[Math.min(i, state.tabs.length - 1)];
+    state.active = -1;
+    if (next) {
+      history.replaceState({}, '', L.buildUrl(next.path, ''));
+      showFile(next.path, '', { scroll: next.scroll || 0 });
+    } else {
+      history.replaceState({}, '', '/');
+      showFile(null, '');
+    }
+  }
+
+  function stepTab(delta) {
+    if (state.tabs.length < 2 || state.active < 0) return;
+    activateTab((state.active + delta + state.tabs.length) % state.tabs.length);
+  }
+
+  tabsEl.addEventListener('click', function (e) {
+    var tab = e.target.closest && e.target.closest('.tab');
+    if (!tab) return;
+    var i = Number(tab.dataset.index);
+    if (e.target.closest('.tab-close')) closeTab(i); else activateTab(i);
+  });
+  tabsEl.addEventListener('auxclick', function (e) {
+    var tab = e.target.closest && e.target.closest('.tab');
+    if (tab && e.button === 1) { e.preventDefault(); closeTab(Number(tab.dataset.index)); }
+  });
+  tabsEl.addEventListener('mousedown', function (e) { if (e.button === 1) e.preventDefault(); }); // no autoscroll
+
+  // `opts.newTab`: open in a tab of its own (an already open file is just activated).
+  function navigate(path, hash, opts) {
+    if (opts && opts.newTab && !state.tabs.some(function (t) { return t.path === path; })) {
+      state.tabs.push({ path: path, scroll: 0 });
+    }
     history.pushState({}, '', L.buildUrl(path, hash));
     return showFile(path, hash || '');
   }
@@ -526,13 +635,15 @@
   // ------------------------------------------------------------ events
   document.addEventListener('click', function (e) {
     var a = e.target.closest && e.target.closest('a');
-    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (!a || e.defaultPrevented || e.button !== 0 || e.shiftKey || e.altKey) return;
+    var mod = e.metaKey || e.ctrlKey;
     var internal = a.getAttribute('data-path') || a.getAttribute('data-internal');
     if (internal) {
       e.preventDefault();
-      navigate(internal, a.getAttribute('data-hash') || '');
+      navigate(internal, a.getAttribute('data-hash') || '', { newTab: mod });
       return;
     }
+    if (mod) return; // other links keep the browser's own behaviour
     var anchor = a.getAttribute('data-anchor');
     if (anchor !== null) {
       e.preventDefault();
@@ -540,6 +651,16 @@
       history.pushState({}, '', L.buildUrl(state.current, anchor));
       scrollToHash(anchor);
     }
+  });
+
+  // middle click on a file link opens it in a new tab
+  document.addEventListener('auxclick', function (e) {
+    var a = e.target.closest && e.target.closest('a');
+    if (!a || e.button !== 1) return;
+    var internal = a.getAttribute('data-path') || a.getAttribute('data-internal');
+    if (!internal) return;
+    e.preventDefault();
+    navigate(internal, a.getAttribute('data-hash') || '', { newTab: true });
   });
 
   window.addEventListener('popstate', function () {
@@ -963,6 +1084,43 @@
     renderTree();
   });
 
+  // ------------------------------------------------------------ keyboard shortcuts (PRD 7.5)
+  var shortcutsEl = $('#shortcuts');
+  function openShortcuts() { lastFocus = document.activeElement; shortcutsEl.hidden = false; $('#shortcuts-close').focus(); }
+  function closeShortcuts() { shortcutsEl.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+  $('#shortcuts-close').addEventListener('click', closeShortcuts);
+  shortcutsEl.addEventListener('click', function (e) { if (e.target === shortcutsEl) closeShortcuts(); });
+  $('#settings-shortcuts').addEventListener('click', function () { closeSettings(); openShortcuts(); });
+
+  function focusSearch() { searchInput.focus(); searchInput.select(); }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !shortcutsEl.hidden) { closeShortcuts(); return; }
+    if (!settingsEl.hidden || !shortcutsEl.hidden) return;
+    var mod = e.metaKey || e.ctrlKey;
+    var key = e.key || '';
+    if (mod && !e.altKey && !e.shiftKey && key.toLowerCase() === 'k') { e.preventDefault(); focusSearch(); return; }
+    if (e.altKey && !mod && e.code === 'KeyW') { e.preventDefault(); closeTab(state.active); return; }
+    var t = e.target;
+    var typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    if (typing || mod || e.altKey) return;
+    var main = $('#main');
+    switch (key) {
+      case '[': stepTab(-1); break;
+      case ']': stepTab(1); break;
+      case 'j': main.scrollBy(0, 80); break;
+      case 'k': main.scrollBy(0, -80); break;
+      case 'g': main.scrollTop = 0; break;
+      case 'G': main.scrollTop = main.scrollHeight; break;
+      case 'o': setPinned(!outlineWrap.classList.contains('pinned'), true); break;
+      case 'd': switchTheme(effectiveDark() ? 'light' : 'dark', true); break;
+      case 'c': if (state.current) copyBtn.click(); break;
+      case '?': openShortcuts(); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+
   // ------------------------------------------------------------ start
   (async function start() {
     connectLive(); // before the first fetch: nothing that changes from here on can be missed
@@ -971,6 +1129,14 @@
     } catch (e) {
       banner('Server unreachable, retrying');
     }
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(TABS_KEY) || '[]');
+      if (Array.isArray(saved)) {
+        state.tabs = saved.filter(function (x) { return typeof x === 'string' && (!state.treePaths.size || state.treePaths.has(x)); })
+          .map(function (x) { return { path: x, scroll: 0 }; });
+        state.active = -1;
+      }
+    } catch (e) { /* ignore a damaged list */ }
     var loc = L.parseLocation(location.search, location.hash);
     await showFile(loc.file, loc.hash);
   })();

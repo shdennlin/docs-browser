@@ -38,6 +38,7 @@
 | v1.4.28 (2026-11-25) | Folder buttons sit right after the folder name; every file and folder has a tooltip with its full path; with Wrap off names are shown in full and the list scrolls sideways (an ellipsis variant was tried and dropped on request) (7.3; AC-75) |
 | v1.4.29 (2026-11-25) | Mermaid text is re-coloured per node when a diagram's own fill makes the theme's text unreadable (below 4.5:1), in both themes (6 Mermaid; AC-80) |
 | v1.4.30 (2026-11-25) | Expand/collapse icons are SVG line icons (two chevrons apart; framed box with a minus) in the text colour, the same in the toolbar and on folders (7.3; AC-72) |
+| v1.4.31 (2026-11-25) | In-page tabs (command/control click, middle click), keyboard shortcuts with a help dialog (7.5; AC-81, AC-82); layout: theme and settings buttons in a bottom bar, the Names/Contents switch inside the search box (7.3; AC-83) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -221,7 +222,7 @@ Render: headings, tables, task lists, code blocks, links, images, GitHub-flavore
 
 ### Theme
 
-Light mode keeps the system look. When the system is in dark mode the page uses the Dracula palette: background `#282a36`, text `#f8f8f2`, links `#8be9fd`, code blocks with the Dracula highlight.js style, Mermaid diagrams with Dracula colours, and rainbow headings (h1 to h6 in red, orange, yellow, green, cyan, purple). A change of the system setting while the page is open re-renders the Mermaid diagrams. The sun/moon button next to the settings button switches between light and dark and the choice is remembered in `localStorage` (`docs-browser.theme`, values `light` or `dark`, anything else is ignored); until it is pressed, and after `Reset to defaults`, the page follows the system. Quote text has a contrast of at least 7:1 against the page.
+Light mode keeps the system look. When the system is in dark mode the page uses the Dracula palette: background `#282a36`, text `#f8f8f2`, links `#8be9fd`, code blocks with the Dracula highlight.js style, Mermaid diagrams with Dracula colours, and rainbow headings (h1 to h6 in red, orange, yellow, green, cyan, purple). A change of the system setting while the page is open re-renders the Mermaid diagrams. The sun/moon button in the bar at the bottom of the file list, next to the settings button, switches between light and dark and the choice is remembered in `localStorage` (`docs-browser.theme`, values `light` or `dark`, anything else is ignored); until it is pressed, and after `Reset to defaults`, the page follows the system. Quote text has a contrast of at least 7:1 against the page.
 
 ### Mermaid
 
@@ -299,14 +300,14 @@ Any other extension, including no extension, returns 404 even if the path is vis
 
 ### 7.3 File name filter and full-text search
 
-The top of the file list has a search box, a `Names` / `Contents` switch and two buttons, `Expand all` and `Collapse all`. The `/` key focuses the box (when no other field has focus) and `Escape` clears it.
+The top of the file list has a search box with a `Names` / `Contents` switch inside its right end, and a row of three list controls: expand all, collapse all and wrap. The theme button and the settings button sit in a bar at the bottom of the list. The `/` key focuses the box (when no other field has focus) and `Escape` clears it.
 
 - **Names (default):** typing searches the file paths fuzzily: the letters of each word must appear in order, in any case (`arcmd` finds `docs/architecture.md`), and every word of the query must match. The tree is replaced by a flat list of the matching files, best match first, each with its badge and its full path (folder part dimmed, matched letters marked). A plain substring beats scattered letters, a match inside the file name beats one in a folder name, a match at the start of a word beats one in the middle, gaps cost points, ties go to the shorter then the alphabetically first path. At most 200 files are listed, then a line says how many more match. With no match the list says "No file name matches"; clearing the box brings the tree back with the folders as the user had them.
 - **Contents:** typing (after 250 ms, at least two characters) calls `GET /api/search` and replaces the tree with a result list: the path, the number of matching lines and up to three lines with the hit marked and the line number. Clicking a result opens the file. The tree comes back when the switch returns to `Names`. A tree event while a content search is shown repeats the search.
 - `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
 - Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
 - Each folder shows two small icon buttons on hover: the expand icon opens the folder and everything inside it, the collapse icon closes them. Clicking a button does not toggle the folder itself. The expand icon is two chevrons pointing away from each other (up and down), the collapse icon a framed box with a minus in front of a second frame; the toolbar buttons and the folder buttons use the same two icons, drawn as SVG lines in the text colour so that they follow the theme (light and dark).
-- The five controls (`Names`, `Contents`, the expand-all and collapse-all icons, wrap `↵`) sit on one line in the default 300 px list.
+- The three list controls (the expand-all and collapse-all icons, wrap `↵`) sit on one line in the default 300 px list, left aligned.
 - The wrap button switches long names between wrapping and one line per name shown in full (the list then scrolls sideways). Selecting a file only scrolls the list vertically, never sideways. The search box and the buttons are outside the scrolling part, so they stay in place however far the list is scrolled sideways; the outer panel snaps back to 0 if a browser scrolls it. In a very narrow list (180 px) the buttons wrap onto a second line. Every file and folder has a tooltip with its full path. The folder icon buttons sit right after the folder name, not at the right edge.
 - Each folder has a small icon, closed or open.
 
@@ -315,9 +316,14 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 - **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted with a background and bold text, without a coloured side border); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. A contents link whose heading does not exist (an out-of-date table of contents) is shown grey and struck through, with the tooltip `找不到這個標題`, and a click does nothing (the address bar is left alone). Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
 - **Copy file name:** while a file is open, a `❐` button at the top right, left of the outline button, copies the file name (the last part of the path, for example `rel.md`) to the clipboard and shows `✓` for about a second. It is also there for HTML pages and absent when no file is open.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
-- **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
+- **Settings:** the `⚙` button in the bar at the bottom of the file list opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
 The server searches on demand, with no index. It walks the listed `.md`, `.markdown`, `.html` and `.htm` files, resolving every one through the resolver (§12.2) with the `/files/*` rules, so hidden folders, the ignore list, out-of-root symlinks and other extensions are never searched. A file reachable through several in-root symlinks is searched once, under its first listed path. Matching is a plain substring test per line, ignoring ASCII case (other letters are matched exactly). HTML is searched by its text with the tags removed. Limits: query 2 to 200 characters, files over 5 MiB skipped, at most 100 result files, 3 lines per file, 256 MiB read per search; hitting a limit sets `truncated`.
+
+### 7.5 Tabs and keyboard shortcuts
+
+- **Tabs:** a tab bar above the preview lists the open files (hidden when none is open). A plain click on a file (list, search result, link inside a document) replaces the active tab; a command-click or control-click, or a middle click, opens the file in a tab of its own. A file that is already open is activated instead of being opened twice. Each tab remembers its scroll position. A tab closes with its `×`, a middle click, or `Alt W`; closing the active tab activates its right neighbour (else the left one), closing the last one shows "Select a file from the list". Tabs with the same file name show the folder as well, the full path is the tooltip. The tab list is kept in the `sessionStorage` of the browser tab, so a reload keeps it. The address bar always shows the active tab; the browser's back and forward buttons act like a plain click.
+- **Shortcuts** (single keys work when no text field has focus and no dialog is open): `/` or `Cmd/Ctrl K` focus the search box; `[` and `]` previous and next tab; `Alt W` close the tab; `j` and `k` scroll down and up by 80 px; `g` and `G` go to the top and the bottom; `o` keeps the outline open or closed; `d` switches light and dark; `c` copies the file name; `?` opens the list of shortcuts (also in the settings dialog); `Escape` closes it. `Cmd W` is left to the browser, which does not let a page take it.
 
 ## 8. Live Reload
 
@@ -741,6 +747,9 @@ site/
 | AC-78 | M3 | §7.4 copy file name | Browser: `/` (no file); `/?file=docs/subdir/rel.md` and click the copy button (clipboard stubbed), wait 1.4 s; `/?file=docs/flow.html` and click it | Hidden without a file; shown with a file; `rel.md` copied once, the button shows `✓` and returns to normal after the wait; `flow.html` copied; the button does not overlap the outline button |
 | AC-79 | M3 | §7.4 dead contents links | Browser `/?file=docs/toc.md` (contents with `#no-such-heading` and emoji links): inspect, click the dead link, click `#how-to-choose` | Only `no-such-heading` is marked, with `line-through`, `cursor: not-allowed` and the tooltip `找不到這個標題`; the click leaves the address unchanged; the live link jumps and is not marked (the emoji links are not marked either) |
 | AC-80 | M3 | §6 Mermaid contrast | Browser `/?file=docs/contrast.md` (nodes with `fill:#fff3cd`, `#1a1a1a`, `#e3f2fd` and one unstyled) in dark mode, then in light mode | In both modes every node's text against its own fill is at least 4.5:1; the unstyled node keeps the Dracula colours (`68,71,90` fill, `248,248,242` text) in dark mode |
+| AC-81 | M3 | §7.5 tabs | Browser `/?file=README.md`: plain click, command-click (real mouse, modifier 4), control-click on an open file, command-click on a link inside a document, scroll and switch tabs, reload, close with `×` and a middle click, close all, two files named alike | A plain click replaces the active tab; the command-click opens a second tab and the address shows its file; an open file is activated not duplicated; the document link opens a third tab; the scroll position (600) comes back; the tab list survives the reload with the address file active; `×` and the middle click close tabs; no tab left gives the empty state and `/`; equal names show `rel.md` and `README.md` with their folder as needed |
+| AC-82 | M3 | §7.5 shortcuts | Browser `/?file=docs/outline.md`: `/`, `Cmd K`, `Ctrl K`, `d` inside the search box, `j` `j` `k` `G` `g`, `o` twice, `d` twice, `c`, `[` `]` with two tabs, `Alt W`, `?`, `j` while the dialog is open, `Escape` | The search box gets focus each time; typing `d` in it changes nothing; the page scrolls 80, 160, 80 px, then to the bottom and top; the outline button toggles; the theme switches to Dracula and back; `outline.md` is copied; `[` and `]` change the tab; `Alt W` closes one; the dialog lists at least 9 rows, ignores `j` and closes on `Escape` |
+| AC-83 | M3 | §7.3 layout | Browser `/?file=README.md`: measure the theme button, the settings button, the `Names`/`Contents` switch and the list controls | Theme and settings buttons are in the bottom bar and not in the toolbar; the switch lies inside the search box at its right end (the box has room for it); the list controls are three buttons and do not include the switch |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -847,6 +856,8 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.4 copy file name | AC-78 |
 | §7.4 dead contents links | AC-79 |
 | §6 Mermaid contrast | AC-80 |
+| §7.5 tabs and shortcuts | AC-81, AC-82 |
+| §7.3 sidebar layout | AC-83 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -957,6 +968,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.10 | Copy file name button (added on request) | T-3.9 | AC-78 |
 | T-3.11 | Mark contents links to missing headings (added on request) | T-3.10 | AC-79 |
 | T-3.12 | Mermaid text contrast per node (added on request) | T-3.11 | AC-80 |
+| T-3.13 | In-page tabs and keyboard shortcuts; theme/settings bar at the bottom, scope switch in the search box (added on request) | T-3.12 | AC-81, AC-82, AC-83 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 
