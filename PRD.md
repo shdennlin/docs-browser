@@ -9,6 +9,7 @@
 | v1.3 | Target user and platforms, risk register, Host/Origin validation, `/files/*` sandbox header, acceptance criteria, task breakdown |
 | v1.4 | `/files/*` serves an **extension whitelist** only; visibility checked on both the requested and the canonical path and compared case-insensitively; one coherent symlink policy (followed, listed, watched, aliased); event pipeline rebuilt as *update state, then broadcast*; every acceptance criterion owned by exactly one milestone; unit tests separated from acceptance criteria; decisions D1 to D10 |
 | v1.4.1 (2026-11-24) | T-0.3 findings: `follow_symlinks(false)` is required on Linux, real-path events make `aliases` mandatory, ignored directories may still be watched (8.1); debouncer limits, directory detection, `Rescan` API (8.2); drop the watcher on any initial `watch()` error (8.5); new AC-57. Earlier in this revision, M0 measurements folded in: `style-src 'unsafe-inline'` is required by Mermaid (12.5); macOS `canonicalize` returns the on-disk case and APFS keeps the stored Unicode form (12.2); pinned crate versions, `rust-version`, package `exclude` (10.1); `/files//a` added to AC-20; Linux-specific variants for AC-28, AC-63, AC-68, AC-69 and a Linux-run recipe in 13 |
+| v1.4.2 (2026-11-24) | M1: directory scan uses `std::fs::read_dir`; `walkdir` removed (10.1, 10.3); resolver steps 3 and 7 clarified (lexical normalization, extension checked on listed name and canonical target, non-regular files denied) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -381,7 +382,7 @@ Versions are chosen in task T-0.1, written to `Cargo.toml` as minor-pinned requi
 | File watching | `notify` + `notify-debouncer-mini` | The debouncer cannot tell removal from change; §8.2 classifies against the snapshot instead |
 | CLI parsing | `clap` (derive) | |
 | Embedded frontend | `rust-embed` | |
-| Directory scan | `walkdir`, `follow_links(false)` | Symlinks are handled manually (§10.3) |
+| Directory scan | `std::fs::read_dir` (`walkdir` dropped in M1: the scanner lists one directory at a time and decides about symlinks itself) | Symlinks are handled manually (§10.3) |
 | MIME types | fixed table for the whitelist (`mime_guess` allowed as a fallback source) | `.js` must map to `text/javascript`, `.svg` to `image/svg+xml` |
 | Errors | `anyhow` | |
 | Open browser | `open` | |
@@ -419,7 +420,7 @@ TreeState {
 - `GET /api/file`: read a Markdown file after the shared resolver (§12.2).
 - `GET /files/*`: read-only serving through the same resolver, whitelist enforced, headers in §11.
 - `GET /api/events`: the SSE stream (§8.3).
-- **Scanner and symlinks:** walk with `follow_links(false)`. For each symlink entry, call `canonicalize`.
+- **Scanner and symlinks:** list each directory with `read_dir`; `DirEntry::file_type` does not follow symlinks, so links are never followed implicitly. For each symlink entry, call `canonicalize`.
   - Skip it if the target is outside the root, dangling, or not visible (§7.1, both paths).
   - A **directory** symlink whose canonical target is the current directory or **an ancestor of it** is a cycle: it is omitted from the tree.
   - Any other in-root symlink is listed and, for directories, expanded. The same target can therefore appear under several listed paths; the entry cap and the depth cap bound any blow-up.
@@ -546,11 +547,11 @@ Every request that names a file (`/api/file`, `/files/*`, deep-link `?file=`) go
 
 1. At startup, `ROOT = std::fs::canonicalize(directory)`.
 2. **Decoding:** the resolver itself never percent-decodes. It receives the single-decoded string produced by axum's extractors. A literal `%2e%2e` that survives that one decoding is just a file name and will not exist. Task T-0.9 verifies the extractor's behaviour.
-3. Reject if the input contains a NUL byte or a backslash, or if `Path::new(input).components()` contains `ParentDir`, `RootDir` or `Prefix`.
+3. Reject if the input contains a NUL byte or a backslash, or if `Path::new(input).components()` contains `ParentDir`, `RootDir` or `Prefix`. `.` segments, empty segments and a trailing slash are dropped before lookup (so `./README.md`, `docs//api.md` and `README.md/` all resolve like `README.md`); the normalized form is the listed path. This is safe because every later check runs on the normalized path.
 4. `TARGET = canonicalize(ROOT.join(input))`. If it fails (not found, permission denied), deny.
 5. Accept only if `TARGET.starts_with(&ROOT)`. `Path::starts_with` compares whole components, so a sibling directory that merely shares a name prefix (`docs-evil` next to `docs`) is rejected.
 6. `LISTED = input`, `CANON = TARGET` made relative to `ROOT`. **Both** must be visible (§7.1, case-insensitive). Deny otherwise.
-7. `TARGET` must be a regular file (a directory is denied), and its extension must pass the whitelist for the endpoint (§7.1).
+7. `TARGET` must be a regular file (a directory, FIFO, socket or device is denied), and the extension must pass the whitelist for the endpoint (§7.1) on **both** the listed name and the canonical target. Checking both is deliberate: a link `a.md -> data.json` is refused because of its target, and `a.txt -> docs/api.md` is refused because of its name.
 8. Every denial returns 404 and logs `denied: <reason> <method> <escaped path>` (§9.3).
 
 Measured in T-0.8 (`docs/spikes/T-0.8.md`): the macOS fixture volume (APFS) is case-insensitive, and `canonicalize` returns the **on-disk spelling** for a case-variant request (`Node_Modules/pkg/index.md` becomes `node_modules/pkg/index.md`, `.GIT/config` becomes `.git/config`), so a case-insensitive visibility check on the canonical path blocks them. On Linux the same inputs fail with NotFound. Visibility comparisons stay case-insensitive on every platform, and both sides of step 5 come from `canonicalize`.

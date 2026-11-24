@@ -29,3 +29,11 @@ Tracks PRD section 16 tasks and evidence. Run `python3 tests/suite.py` for the l
 7. 13 intro: Linux browser checks use `docker run --network host`, server stays on `127.0.0.1`.
 8. UT-01 to UT-07: case-variant assertions are "denied" only (macOS: OK then blocked; Linux: NotFound).
 9. 10.1: pin `rust-version = "1.91"` (notify 9 / debouncer-mini 0.8 require 1.91); package `exclude` for fixtures (T-0.5).
+
+## M1
+
+| Task | Status | Evidence |
+|---|---|---|
+| T-1.1 `resolve.rs`, `visible()`, whitelist | done | UT-01 to UT-07 PASS on macOS and Linux (uid 1000); mutation checks: removing the canonical-visibility check, the root prefix check, or the case-insensitive ignore compare each fail the matching test |
+| T-1.2 `tree.rs` scanner | done | UT-08 to UT-11 PASS on both platforms; removing the cycle rule fails UT-08 |
+| CP-1 checkpoint | done | `/reviewer:result` run 20261124T062351Z-YTgFKN: PASS, 0 critical, 0 high, 1 medium, 3 low. All 4 verified and handled: F1 (file-symlink tests added, PRD 12.2 step 7 clarified), F2 (normalisation documented and tested), F3 (Linux-only non-UTF-8 test), F4 (scanner skips non-regular symlink targets, caps asserted). Own review found no bypass. Mutation checks caught: canonical visibility, root prefix, cycle rule, case-insensitive ignore, canonical extension, non-regular target guard (the first FIFO test did not exercise its guard; fixed) |
