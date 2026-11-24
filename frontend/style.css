@@ -196,3 +196,6 @@ body.fullwidth #preview { max-width: none; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --mark-hit: #f1fa8c; } }
 :root[data-theme="dark"] { --mark-hit: #f1fa8c; }
 #tree a.selected mark { color: inherit; }
+
+/* a contents link to a heading that does not exist */
+#preview a.dead-link { color: var(--muted); text-decoration: line-through; cursor: not-allowed; }

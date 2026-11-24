@@ -108,6 +108,7 @@ MD
   echo '- [Threat Detection & Response](#threat-detection--response)'
   echo '- [Repeat](#repeat-1)'
   echo '- [Threat again](#%EF%B8%8F-threat-detection--response)'
+  echo '- [Gone heading](#no-such-heading)'
   for h in '## Executive Summary' '## Workflow' '### 🤖 Automation Mode' '### How to Choose?' '## 🛡️ Threat Detection & Response' '## Repeat' '## Repeat'; do
     echo; echo "$h"; echo
     for j in $(seq 1 30); do echo "Filler $j."; echo; done

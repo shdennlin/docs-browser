@@ -917,6 +917,27 @@ checks['AC-78'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-79: contents links to missing headings are struck through and inert
+checks['AC-79'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/toc.md');
+  try {
+    const q = (e) => p.ev(e);
+    const info = await q("(function(){var all=Array.from(document.querySelectorAll('#preview a[data-anchor]'));var dead=all.filter(function(a){return a.classList.contains('dead-link')});var d=dead[0];var s=d&&getComputedStyle(d);return {total:all.length,dead:dead.map(function(a){return a.dataset.anchor}),title:d&&d.title,deco:s&&s.textDecorationLine,cursor:s&&s.cursor}})()");
+    const before = await q('location.hash + location.search');
+    await q("document.querySelector('#preview a.dead-link').click(); true");
+    await sleep(200);
+    const after = await q('location.hash + location.search');
+    const histLen = await q('history.length');
+    // a live link still works and is not marked
+    await q("document.querySelector('#preview a[data-anchor=\"how-to-choose\"]').click(); true");
+    await sleep(200);
+    const live = await q("({hash:location.hash, marked:document.querySelector('#preview a[data-anchor=\"how-to-choose\"]').classList.contains('dead-link')})");
+    const ok = info.dead.length === 1 && info.dead[0] === 'no-such-heading' && info.total >= 7 && info.title === '找不到這個標題'
+      && info.deco === 'line-through' && info.cursor === 'not-allowed' && before === after && live.hash === '#how-to-choose' && live.marked === false;
+    return [ok, JSON.stringify({ info, before, after, histLen, live })];
+  } finally { await p.close(); }
+};
+
 // ---------------------------------------------------------------- run
 const wanted = IDS.length ? IDS : Object.keys(checks);
 const out = [];

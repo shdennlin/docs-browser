@@ -344,6 +344,18 @@
     return null;
   }
 
+  // A contents link whose heading does not exist (an out-of-date table of contents) is shown struck
+  // through and does nothing, so it is clear that the document is stale and not the viewer broken.
+  function markDeadLinks() {
+    Array.prototype.forEach.call(els.preview.querySelectorAll('a[data-anchor]'), function (a) {
+      var hash = a.getAttribute('data-anchor');
+      if (hash && !findAnchor(hash)) {
+        a.classList.add('dead-link');
+        a.title = '\u627E\u4E0D\u5230\u9019\u500B\u6A19\u984C';
+      }
+    });
+  }
+
   function scrollToHash(hash) {
     if (!hash) return;
     var target = findAnchor(hash);
@@ -409,6 +421,7 @@
       treePaths: state.treePaths,
       slugger: L.makeSlugger(),
     });
+    markDeadLinks();
     await renderMermaid(els.preview, token);
     await waitForImages(els.preview, 3000);
     if (token !== state.token) return;
@@ -485,6 +498,7 @@
     var anchor = a.getAttribute('data-anchor');
     if (anchor !== null) {
       e.preventDefault();
+      if (a.classList.contains('dead-link')) return; // no such heading: leave the address alone
       history.pushState({}, '', L.buildUrl(state.current, anchor));
       scrollToHash(anchor);
     }
