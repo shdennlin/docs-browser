@@ -669,31 +669,36 @@ checks['AC-72'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
-// ---- AC-73: file name filter
+// ---- AC-73: fuzzy file name search (flat list, best match first, full path)
 checks['AC-73'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=README.md');
   try {
     const typeIn = (v) => p.ev(`(function(){var i=document.getElementById('search');i.value=${JSON.stringify(v)};i.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
     const files = () => p.ev("Array.from(document.querySelectorAll('#tree a[data-path]')).map(function(a){return a.dataset.path})");
     await p.ev("document.getElementById('collapse-all').click(); true");
-    await typeIn('DOCS/ARCH');
+    await typeIn('arcmd');                      // letters in order, not a substring
     const f1 = await files();
-    const opened = await p.ev("document.querySelectorAll('#tree details[open]').length");
-    await typeIn('docs flow');
+    const shape = await p.ev("(function(){var a=document.querySelector('#tree a[data-path]');return {text:a.textContent,marks:Array.from(a.querySelectorAll('mark')).map(function(m){return m.textContent}).join(''),flat:!document.querySelector('#tree details'),badge:(a.querySelector('.badge')||{}).textContent}})()");
+    await typeIn('mda');                        // wrong order: nothing
+    const wrongOrder = await p.ev("(document.querySelector('#tree .tree-empty')||{}).textContent");
+    await typeIn('docs flow');                  // two words, all must match
     const f2 = await files();
     await typeIn('zzzz-nothing');
     const none = await p.ev("(document.querySelector('#tree .tree-empty')||{}).textContent");
     await typeIn('');
-    const all = (await files()).length;
-    const closedAgain = await p.ev("document.querySelectorAll('#tree details[open]').length");
-    // "/" focuses the box
+    const tree = await p.ev("({details:document.querySelectorAll('#tree details').length, open:document.querySelectorAll('#tree details[open]').length, flat:!!document.querySelector('#tree ul.fuzzy-list')})");
+    // clicking a result opens the file
+    await typeIn('srch-tar');
+    await p.ev("document.querySelector('#tree a[data-path]').click(); true");
+    await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Search target'"), 5000, 50);
+    await typeIn('');
     await p.ev("document.activeElement && document.activeElement.blur(); true");
     await p.key('/', 'Slash', 191);
     const focused = await p.ev("document.activeElement && document.activeElement.id");
-    const ok = JSON.stringify(f1) === '["docs/architecture.md"]' && opened >= 1
-      && JSON.stringify(f2) === '["docs/flow.html"]' && none === 'No file name matches'
-      && all >= 8 && closedAgain === 0 && focused === 'search';
-    return [ok, JSON.stringify({ f1, opened, f2, none, all, closedAgain, focused })];
+    const ok = f1[0] === 'docs/architecture.md' && shape.text.includes('docs/architecture.md') && shape.marks.length >= 5 && shape.flat && shape.badge === 'MD'
+      && wrongOrder === 'No file name matches' && f2[0] === 'docs/flow.html' && none === 'No file name matches'
+      && tree.details >= 2 && tree.open === 0 && !tree.flat && focused === 'search';
+    return [ok, JSON.stringify({ f1: f1.slice(0, 3), shape, wrongOrder, f2: f2.slice(0, 2), none, tree, focused })];
   } finally { await p.close(); }
 };
 
@@ -778,6 +783,10 @@ checks['AC-75'] = async (cdp) => {
     const dbg = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]').getBoundingClientRect();var s=document.getElementById('sidebar');return {linkW:Math.round(a.width),linkL:Math.round(a.left),vw:s.clientWidth,sw:s.scrollWidth}})()");
     const side = await q("({sl:document.getElementById('side-scroll').scrollLeft, wide:document.getElementById('side-scroll').scrollWidth > document.getElementById('side-scroll').clientWidth, tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left - document.getElementById('sidebar').getBoundingClientRect().left)})");
     // scrolled far to the right, every control is still in view
+    // the outer panel must never scroll (a browser may do it on focus); it snaps back at once
+    await q("document.getElementById('sidebar').scrollLeft = 60; true");
+    await sleep(100);
+    const outerLeft = await q("document.getElementById('sidebar').scrollLeft");
     await q("document.getElementById('side-scroll').scrollLeft = 10000; true");
     const farRight = await q("(function(){var sb=document.getElementById('sidebar').getBoundingClientRect();var bs=Array.from(document.querySelectorAll('#search-row > *, #mode-row > button')).map(function(b){return b.getBoundingClientRect()});return {all:bs.every(function(r){return r.left>=sb.left-1&&r.right<=sb.right+1}),n:bs.length,moved:document.getElementById('side-scroll').scrollLeft>0}})()");
     await q("localStorage.clear(); true");
@@ -790,9 +799,9 @@ checks['AC-75'] = async (cdp) => {
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
-      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8 && farRight.all && farRight.moved && farRight.n === 8
+      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8 && outerLeft === 0 && farRight.all && farRight.moved && farRight.n === 8
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, farRight, dbg, icons, full })];
+    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, outerLeft, farRight, dbg, icons, full })];
   } finally { await p.close(); }
 };
 

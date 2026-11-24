@@ -100,31 +100,49 @@ test('sidebar width is clamped to 180 px .. 60% of the window and stored values 
   }
 });
 
-test('filterTree keeps matching files and their folders, any case, all words', () => {
-  const tree = [
-    { name: 'docs', type: 'directory', children: [
-      { name: 'architecture.md', type: 'file', path: 'docs/architecture.md' },
-      { name: 'API.md', type: 'file', path: 'docs/API.md' },
-      { name: 'sub', type: 'directory', children: [{ name: 'deep.html', type: 'file', path: 'docs/sub/deep.html' }] },
-    ] },
-    { name: 'README.md', type: 'file', path: 'README.md' },
-  ];
-  const names = (r) => JSON.stringify(r.entries);
-  const none = L.filterTree(tree, '  ');
-  assert.equal(none.active, false);
-  assert.equal(none.entries, tree);
+const FTREE = [
+  { name: 'docs', type: 'directory', children: [
+    { name: 'architecture.md', type: 'file', path: 'docs/architecture.md' },
+    { name: 'API.md', type: 'file', path: 'docs/API.md' },
+    { name: 'search-target.md', type: 'file', path: 'docs/search-target.md' },
+    { name: 'sub', type: 'directory', children: [{ name: 'deep.html', type: 'file', path: 'docs/sub/deep.html' }] },
+  ] },
+  { name: 'README.md', type: 'file', path: 'README.md' },
+];
+const order = (q) => L.fuzzyFiles(FTREE, q).map((r) => r.path);
 
-  const a = L.filterTree(tree, 'ARCH');
-  assert.equal(a.matches, 1);
-  assert.ok(names(a).includes('architecture.md') && !names(a).includes('README'));
-  assert.deepEqual([...a.open], ['docs']);
+test('fuzzyMatch: letters in order, any case; null otherwise', () => {
+  assert.ok(L.fuzzyMatch('arcmd', 'docs/architecture.md'));
+  assert.ok(L.fuzzyMatch('ARCH', 'docs/architecture.md'));
+  assert.equal(L.fuzzyMatch('mda', 'docs/architecture.md'), null);   // wrong order
+  assert.equal(L.fuzzyMatch('zzz', 'docs/architecture.md'), null);
+  assert.deepEqual(L.fuzzyMatch('md', 'a.md').pos, [2, 3]);
+  assert.equal(L.fuzzyMatch('', 'a.md'), null);
+});
 
-  const deep = L.filterTree(tree, 'docs deep'); // every word must be in the path
-  assert.equal(deep.matches, 1);
-  assert.deepEqual([...deep.open].sort(), ['docs', 'docs/sub']);
+test('fuzzyMatch ranks substring > word start > scattered, and file name > folder', () => {
+  const sub = L.fuzzyMatch('arch', 'docs/architecture.md').score;
+  const scattered = L.fuzzyMatch('arch', 'docs/search-target.md').score; // s-e-a-r-c-h contains "arch" too
+  assert.ok(sub > L.fuzzyMatch('actur', 'docs/architecture.md').score);   // scattered letters
+  assert.ok(L.fuzzyMatch('ar', 'docs/architecture.md').score > L.fuzzyMatch('ar', 'docs/search-target.md').score); // word start beats the middle of a word
+  assert.ok(sub > 0 && scattered > 0);
+  // the same word in the file name beats it in a folder name
+  assert.ok(L.fuzzyMatch('guide', 'x/guide.md').score > L.fuzzyMatch('guide', 'guide/x.md').score);
+});
 
-  assert.equal(L.filterTree(tree, 'zzz').matches, 0);
-  assert.deepEqual(L.filterTree(tree, 'zzz').entries, []);
-  assert.equal(L.filterTree(tree, 'md').matches, 3);
-  assert.deepEqual(L.collectDirs(tree), ['docs', 'docs/sub']);
+test('fuzzyFiles: all words must match, best first, ties by path, folders are not listed', () => {
+  assert.deepEqual(order('  '), []);
+  assert.equal(order('arcmd')[0], 'docs/architecture.md');
+  assert.equal(order('docs/arch')[0], 'docs/architecture.md');
+  assert.deepEqual(order('docs deep'), ['docs/sub/deep.html']);
+  assert.deepEqual(order('zzz'), []);
+  assert.equal(order('md').length, 4);
+  assert.ok(!order('sub').includes('docs/sub'));
+  const r = L.fuzzyFiles(FTREE, 'api')[0];
+  assert.equal(r.path, 'docs/API.md');
+  assert.deepEqual(r.pos, [5, 6, 7]);
+});
+
+test('collectDirs lists every folder path', () => {
+  assert.deepEqual(L.collectDirs(FTREE), ['docs', 'docs/sub']);
 });

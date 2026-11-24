@@ -184,3 +184,11 @@ body.fullwidth #preview { max-width: none; }
 #mode-row button { white-space: nowrap; }
 #mode-row #expand-all, #mode-row #collapse-all, #mode-row #wrap-toggle { padding: 2px 7px; font-size: 14px; line-height: 1.2; }
 #search { min-width: 0; flex: 1; }
+
+/* fuzzy file name results: flat list, folder part muted, matched letters marked */
+#tree ul.fuzzy-list { padding-left: 2px; }
+.fuzzy-list .fz-dir { color: var(--muted); }
+.fuzzy-list mark { background: transparent; color: var(--mark-hit, #e5a50a); font-weight: 700; text-decoration: underline; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --mark-hit: #f1fa8c; } }
+:root[data-theme="dark"] { --mark-hit: #f1fa8c; }
+#tree a.selected mark { color: inherit; }

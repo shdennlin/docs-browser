@@ -17,7 +17,6 @@
     expanded: new Set(),
     query: '',
     mode: 'names',
-    filter: { active: false, open: new Set() },
   };
 
   // ------------------------------------------------------------ Markdown renderer
@@ -176,17 +175,64 @@
   // ------------------------------------------------------------ tree
   function renderTree() {
     clear(els.tree);
-    var f = L.filterTree(state.tree, state.mode === 'names' ? state.query : '');
-    state.filter = f;
-    if (f.active && !f.entries.length) {
+    if (state.mode === 'names' && L.queryTokens(state.query).length) { renderFuzzy(); markSelected(false); return; }
+    els.tree.appendChild(buildList(state.tree, ''));
+    markSelected(false); // a re-render must not re-open a folder the user closed
+  }
+
+  var FUZZY_LIMIT = 200;
+
+  // Matches as a flat list, best first: the full path with the matched letters marked.
+  function renderFuzzy() {
+    var res = L.fuzzyFiles(state.tree, state.query);
+    if (!res.length) {
       var none = document.createElement('div');
       none.className = 'tree-empty';
       none.textContent = 'No file name matches';
       els.tree.appendChild(none);
       return;
     }
-    els.tree.appendChild(buildList(f.entries, ''));
-    markSelected(false); // a re-render must not re-open a folder the user closed
+    var ul = document.createElement('ul');
+    ul.className = 'fuzzy-list';
+    res.slice(0, FUZZY_LIMIT).forEach(function (r) {
+      var li = document.createElement('li');
+      var a = document.createElement('a');
+      a.href = L.buildUrl(r.path, '');
+      a.dataset.path = r.path;
+      var badge = document.createElement('span');
+      var isHtml = /\.html?$/i.test(r.path);
+      badge.className = 'badge ' + (isHtml ? 'html' : 'md');
+      badge.textContent = isHtml ? 'HTML' : 'MD';
+      a.appendChild(badge);
+      var cut = r.path.lastIndexOf('/') + 1;
+      var hit = {};
+      r.pos.forEach(function (x) { hit[x] = true; });
+      [['fz-dir', 0, cut], ['fz-name', cut, r.path.length]].forEach(function (part) {
+        if (part[1] === part[2]) return;
+        var span = document.createElement('span');
+        span.className = part[0];
+        var i = part[1];
+        while (i < part[2]) {
+          var on = !!hit[i];
+          var j = i;
+          while (j < part[2] && !!hit[j] === on) j++;
+          var chunk = r.path.slice(i, j);
+          if (on) { var m = document.createElement('mark'); m.textContent = chunk; span.appendChild(m); }
+          else span.appendChild(document.createTextNode(chunk));
+          i = j;
+        }
+        a.appendChild(span);
+      });
+      li.appendChild(a);
+      ul.appendChild(li);
+    });
+    els.tree.appendChild(ul);
+    if (res.length > FUZZY_LIMIT) {
+      var more = document.createElement('div');
+      more.className = 'tree-empty';
+      more.textContent = (res.length - FUZZY_LIMIT) + ' more matches; type more letters to narrow';
+      els.tree.appendChild(more);
+    }
   }
 
   function buildList(entries, prefix) {
@@ -197,9 +243,8 @@
         var dirPath = prefix ? prefix + '/' + e.name : e.name;
         var details = document.createElement('details');
         details.dataset.dir = dirPath;
-        if (state.expanded.has(dirPath) || (state.filter.active && state.filter.open.has(dirPath))) details.open = true;
+        if (state.expanded.has(dirPath)) details.open = true;
         details.addEventListener('toggle', function () {
-          if (state.filter.active) return; // folders opened by the filter are not remembered
           if (details.open) state.expanded.add(dirPath); else state.expanded.delete(dirPath);
         });
         var summary = document.createElement('summary');
@@ -661,6 +706,14 @@
   }
   outlineBtn.addEventListener('click', function () { setPinned(!outlineWrap.classList.contains('pinned'), true); });
   try { setPinned(localStorage.getItem(OUTLINE_KEY) === '1', false); } catch (e) { /* storage may be off */ }
+
+  // The panel itself never scrolls, only #side-scroll does. Some browsers still scroll an overflow:hidden
+  // box when a child gets focus; put it back so the search box and buttons cannot slide out of view.
+  $('#sidebar').addEventListener('scroll', function () {
+    var sb = $('#sidebar');
+    if (sb.scrollLeft !== 0) sb.scrollLeft = 0;
+    if (sb.scrollTop !== 0) sb.scrollTop = 0;
+  });
 
   // ------------------------------------------------------------ wrap toggle for the left panel
   var WRAP_KEY = 'docs-browser.wrapNames';

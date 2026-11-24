@@ -182,39 +182,78 @@
     }
   }
 
-  // ---------------------------------------------------------------- file name filter (PRD 7.3)
+  // ---------------------------------------------------------------- fuzzy file name search (PRD 7.3)
   function queryTokens(query) {
     return String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   }
 
-  // Keeps the files whose path contains every word of the query (any case) and the folders that lead to
-  // them. `open` lists the folders to show open while the filter is active.
-  function filterTree(entries, query) {
-    var tokens = queryTokens(query);
-    if (!tokens.length) return { active: false, entries: entries, matches: null, open: new Set() };
-    var open = new Set();
-    var matches = 0;
-    function walk(list, prefix) {
-      var kept = [];
-      (list || []).forEach(function (e) {
-        if (e.type === 'directory') {
-          var dirPath = prefix ? prefix + '/' + e.name : e.name;
-          var children = walk(e.children, dirPath);
-          if (children.length) {
-            open.add(dirPath);
-            kept.push({ name: e.name, type: e.type, children: children });
-          }
-        } else {
-          var hay = String(e.path || e.name).toLowerCase();
-          if (tokens.every(function (t) { return hay.indexOf(t) !== -1; })) {
-            matches += 1;
-            kept.push(e);
-          }
-        }
-      });
-      return kept;
+  // Fuzzy match of one word against a path: the letters must appear in order (any case). Returns
+  // { score, pos } or null. A plain substring scores higher than scattered letters, matches in the file
+  // name and at the start of a word score higher still, and gaps cost points.
+  function isBoundary(text, i) {
+    if (i === 0) return true;
+    var c = text.charAt(i - 1);
+    return c === '/' || c === '-' || c === '_' || c === '.' || c === ' ';
+  }
+  function fuzzyMatch(word, text) {
+    var q = String(word).toLowerCase();
+    var t = String(text).toLowerCase();
+    if (!q) return null;
+    var base = t.lastIndexOf('/') + 1;
+    var idx = t.indexOf(q);
+    var pos = [];
+    var i;
+    var substring = idx !== -1;
+    if (substring) {
+      var inBase = t.indexOf(q, base);
+      if (inBase !== -1) idx = inBase;       // prefer the hit inside the file name
+      for (i = 0; i < q.length; i++) pos.push(idx + i);
+    } else {
+      // leftmost greedy to find where the match ends, then walk back to the tightest start
+      var end = -1;
+      var k = 0;
+      for (i = 0; i < t.length && k < q.length; i++) { if (t.charAt(i) === q.charAt(k)) { k++; end = i; } }
+      if (k < q.length) return null;
+      var j = q.length - 1;
+      pos = new Array(q.length);
+      for (i = end; i >= 0 && j >= 0; i--) { if (t.charAt(i) === q.charAt(j)) { pos[j] = i; j--; } }
     }
-    return { active: true, entries: walk(entries, ''), matches: matches, open: open };
+    var score = q.length * 10 - (pos[pos.length - 1] - pos[0] + 1 - q.length); // letters, minus gaps
+    for (i = 0; i < pos.length; i++) {
+      if (i > 0 && pos[i] === pos[i - 1] + 1) score += 15;
+      if (isBoundary(t, pos[i])) score += 10;
+    }
+    if (substring) score += 100;
+    if (pos[0] >= base) score += 40;           // starts inside the file name
+    if (isBoundary(t, pos[0])) score += 30;    // starts a word or a folder name
+    return { score: score, pos: pos };
+  }
+
+  // Every file of a /api/tree response that matches every word of the query, best match first.
+  // Each result: { path, name, score, pos } where pos lists the matched character indexes of the path.
+  function fuzzyFiles(entries, query) {
+    var tokens = queryTokens(query);
+    var out = [];
+    if (!tokens.length) return out;
+    (function walk(list) {
+      (list || []).forEach(function (e) {
+        if (e.type === 'directory') { walk(e.children); return; }
+        var path = String(e.path || e.name);
+        var total = 0;
+        var all = [];
+        for (var i = 0; i < tokens.length; i++) {
+          var m = fuzzyMatch(tokens[i], path);
+          if (!m) return;
+          total += m.score;
+          all = all.concat(m.pos);
+        }
+        var seen = {};
+        var pos = all.filter(function (x) { if (seen[x]) return false; seen[x] = true; return true; }).sort(function (x, y) { return x - y; });
+        out.push({ path: path, name: e.name, score: total - path.length * 0.1, pos: pos });
+      });
+    })(entries);
+    out.sort(function (x, y) { return y.score - x.score || (x.path < y.path ? -1 : x.path > y.path ? 1 : 0); });
+    return out;
   }
 
   // Every directory path of a /api/tree response.
@@ -253,7 +292,7 @@
   return {
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT, SIDEBAR_MIN: SIDEBAR_MIN,
     clampSidebarWidth: clampSidebarWidth, parseStoredWidth: parseStoredWidth,
-    queryTokens: queryTokens, filterTree: filterTree, collectDirs: collectDirs,
+    queryTokens: queryTokens, fuzzyMatch: fuzzyMatch, fuzzyFiles: fuzzyFiles, collectDirs: collectDirs,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
     slugify: slugify, makeSlugger: makeSlugger,
     encodePath: encodePath, resolveRelative: resolveRelative, classifyLink: classifyLink,
