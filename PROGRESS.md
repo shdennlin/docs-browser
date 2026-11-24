@@ -87,3 +87,8 @@ Docker leftovers to remove when finished: volumes `docs-browser-cargo` and `docs
 | CP-5 checkpoint | done | `/reviewer:result --base cp5-base` run 20261124T094335Z-uz8uhk: PASS, 0 critical, 0 high, 5 medium, 7 low; 11 verified, 1 unverified (`eprintln!` panics on closed stderr, fixed and measured); all 12 handled. Notable: an f-string with a backslash (SyntaxError before Python 3.12) would have broken the whole suite on Linux; AC-37 could not fail until it was given a directory name that tries to forge a log line |
 
 Incident: my first AC-63 and AC-68 implementation assumed the `open` crate looks up `open` on PATH and put a stub first. It calls `/usr/bin/open` by absolute path, so those two runs probably opened two real browser tabs on 127.0.0.1:4111 and :4112 (dead URLs). The checks are now opt-in on macOS (`DOCS_BROWSER_SUITE_OPEN=1`).
+
+## T-5.3 final runs
+
+- A full macOS run found one failure that single-milestone runs had hidden: AC-26c started its `--host 0.0.0.0` server on 4101, which the AC-25 include-hidden server still held, so the request reached the loopback-mode server and got 403. AC-26c and AC-27 now use ports of their own (4118, 4119); PRD v1.4.10.
+- Linux: `rust:1` container, uid 1000, `--sysctl net.ipv4.ip_unprivileged_port_start=1024` (needed for AC-69), container-local copy of the repo. Non-browser rows run in the container; the 23 browser rows run through `tests/linux-browser.sh` (server in the container, `--network host`, Chrome on the host); AC-16 runs in `node:22-slim` (pulled with the user's approval) because `rust:1` has no node.

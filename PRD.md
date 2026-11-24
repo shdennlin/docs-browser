@@ -17,6 +17,7 @@
 | v1.4.7 (2026-11-24) | CP-4: deleting a symlink is classified; `resync` on every rescan; late SSE streams see shutdown; invisible paths filtered in the watcher; client reconnects by hand when the browser gives up, connects before the first fetch, cancels a pending re-render on `removed` (8.2, 8.3, 8.5) |
 | v1.4.8 (2026-11-24) | M5: `--open` checks run on macOS only with `DOCS_BROWSER_SUITE_OPEN=1` (the opener cannot be intercepted: the `open` crate calls `/usr/bin/open` by absolute path); the browse URL is a pure function with a unit test (AC-63, AC-68); README added |
 | v1.4.9 (2026-11-24) | CP-5: unreadable directory exits 2; startup, warning and error paths are escaped; log writes ignore a closed stderr; `--verbose` omits the query string; `--open` uses a detached opener; AC-37, 60, 67, 69 strengthened; README install path (9.1, 9.3, 13) |
+| v1.4.10 (2026-11-24) | AC-26c and AC-27 use ports of their own: a shared port made AC-26c fail in a full run only (13) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -684,8 +685,8 @@ site/
 | AC-25 | M2 | §7.1 hidden | Default, then `--include-hidden`: `/files/.hidden/note.md`, `/files/.env`, `/files/.git/config`, `/files/node_modules/pkg/index.md` | Default: all `404`. With `--include-hidden`: `.hidden/note.md` → `200`; `.env`, `.git/config`, `node_modules/...` still `404` |
 | AC-26a | M2 | §12.1 Host/Origin | `curl -s -o /dev/null -w '%{http_code}'` on `$BASE/api/tree` with: `-H 'Host: evil.example:4100'`; `-H 'Host: 127.0.0.2:4100'`; `-H 'Origin: http://evil.example'`; no extra headers | `403`; `403`; `403`; `200`. A `403` response also carries `x-content-type-options: nosniff` and `cache-control: no-store` |
 | AC-26b | M4 | §12.1 events | `curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' $BASE/api/events` | `403` |
-| AC-26c | M5 | §12.1 non-loopback | Start with `--host 0.0.0.0`; `curl -H 'Host: anything:4101'` (no Origin) then `curl -H 'Host: a:4101' -H 'Origin: http://b:4101'` | `200`; `403` |
-| AC-27 | M5 | §9.2 warning | `docs-browser tests/fixtures/site --host 0.0.0.0 --port 4101` | stderr contains `WARNING` and `exposes`; listens on `0.0.0.0:4101`; process keeps running |
+| AC-26c | M5 | §12.1 non-loopback | Start with `--host 0.0.0.0` on a port of its own (the runner uses 4118: 4101 is held by the AC-25 server for the whole run); `curl -H 'Host: anything:<port>'` (no Origin) then `curl -H 'Host: a:<port>' -H 'Origin: http://b:<port>'` | `200`; `403` |
+| AC-27 | M5 | §9.2 warning | `docs-browser tests/fixtures/site --host 0.0.0.0 --port <port>` (the runner uses 4119) | stderr contains `WARNING` and `exposes`; listens on the wildcard address (`0.0.0.0:<port>` or `*:<port>`); process keeps running |
 | AC-28 | M2 | §12.1 default bind | `tests/listening.sh 4100` (uses `lsof`; falls back to `/proc/net/tcp` where `lsof` is absent, as in the Linux image) | `127.0.0.1:4100` only |
 | AC-29 | M2 | §11 methods | `curl -s -o /dev/null -w '%{http_code}' -X POST $BASE/api/file`; `-X PUT $BASE/files/x` | `405`; `405` |
 | AC-30 | M2 | §11 CORS | `curl -sI -H 'Origin: http://localhost:9' $BASE/files/docs/style.css \| grep -ic access-control` | `0` |

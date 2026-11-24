@@ -124,6 +124,8 @@ class Server:
 PORT = 4100          # default-mode server (PRD 13)
 PORT_HIDDEN = 4101   # --include-hidden server
 PORT_BIG = 4102      # 60,000-file tree
+PORT_WILD = 4118     # AC-26c: --host 0.0.0.0
+PORT_WARN = 4119     # AC-27: --host 0.0.0.0 warning
 
 
 def server(ctx, hidden=False):
@@ -808,20 +810,20 @@ class Proc:
 
 @ac("AC-26c")
 def ac_26c(ctx):
-    with Server(ctx["bin"], FIXTURE_SITE, 4101, ["--host", "0.0.0.0"]):
-        a = get(4101, "/api/tree", host="anything:4101")[0]
-        b = get(4101, "/api/tree", host="a:4101", headers={"Origin": "http://b:4101"})[0]
+    with Server(ctx["bin"], FIXTURE_SITE, PORT_WILD, ["--host", "0.0.0.0"]):
+        a = get(PORT_WILD, "/api/tree", host=f"anything:{PORT_WILD}")[0]
+        b = get(PORT_WILD, "/api/tree", host=f"a:{PORT_WILD}", headers={"Origin": f"http://b:{PORT_WILD}"})[0]
     return (a, b) == (200, 403), f"foreign Host, no Origin={a}; Origin differs from Host={b}"
 
 
 @ac("AC-27")
 def ac_27(ctx):
-    pr = Proc(ctx, [FIXTURE_SITE, "--host", "0.0.0.0", "--port", "4101"])
+    pr = Proc(ctx, [FIXTURE_SITE, "--host", "0.0.0.0", "--port", str(PORT_WARN)])
     try:
         pr.wait_for_stderr("Serving")
         err = pr.stderr()
-        listening = sh(["./tests/listening.sh", "4101"], cwd=ROOT).stdout.split()
-        wildcard = any(a in ("*:4101", "0.0.0.0:4101") for a in listening)
+        listening = sh(["./tests/listening.sh", str(PORT_WARN)], cwd=ROOT).stdout.split()
+        wildcard = any(a in (f"*:{PORT_WARN}", f"0.0.0.0:{PORT_WARN}") for a in listening)
         running = pr.proc.poll() is None
     finally:
         pr.stop()
