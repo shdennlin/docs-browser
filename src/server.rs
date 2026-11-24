@@ -156,7 +156,7 @@ pub fn live_events(
 
 async fn api_events(State(state): State<Arc<AppState>>) -> Response {
     let Ok(permit) = state.sse_slots.clone().try_acquire_owned() else {
-        eprintln!("denied: sse-limit GET /api/events");
+        crate::elog!("denied: sse-limit GET /api/events");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let initial = state
@@ -206,7 +206,7 @@ pub fn escape_log(s: &str) -> String {
 }
 
 fn log_denied(reason: &str, method: &Method, target: &str) {
-    eprintln!("denied: {} {} {}", reason, method, escape_log(target));
+    crate::elog!("denied: {} {} {}", reason, method, escape_log(target));
 }
 
 fn denied_status(d: &Denied) -> StatusCode {
@@ -222,10 +222,11 @@ async fn request_log(State(state): State<Arc<AppState>>, req: Request, next: Nex
         return next.run(req).await;
     }
     let method = req.method().clone();
-    let target = req.uri().to_string();
+    // The path only: query strings can carry file names the user did not expect in a log.
+    let target = req.uri().path().to_string();
     let started = Instant::now();
     let resp = next.run(req).await;
-    eprintln!(
+    crate::elog!(
         "{} {} {} {}ms",
         method,
         escape_log(&target),
@@ -445,7 +446,7 @@ async fn fallback(method: Method, uri: Uri) -> Response {
 
 fn io_error(e: &io::Error, method: &Method, uri: &Uri) -> Response {
     // Details stay in the log; the client only sees the status (PRD 11).
-    eprintln!(
+    crate::elog!(
         "error: {} {} {}",
         method,
         escape_log(&uri.to_string()),

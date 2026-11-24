@@ -16,6 +16,7 @@
 | v1.4.6 (2026-11-24) | M4: `notify-debouncer-mini` replaced by raw `notify` events with an `Access`-event filter and an own quiet-period debounce, after a Linux-only self-triggering rebuild loop (8.1, 8.2, 10.1); AC-48 and AC-57 check that an idle server is silent |
 | v1.4.7 (2026-11-24) | CP-4: deleting a symlink is classified; `resync` on every rescan; late SSE streams see shutdown; invisible paths filtered in the watcher; client reconnects by hand when the browser gives up, connects before the first fetch, cancels a pending re-render on `removed` (8.2, 8.3, 8.5) |
 | v1.4.8 (2026-11-24) | M5: `--open` checks run on macOS only with `DOCS_BROWSER_SUITE_OPEN=1` (the opener cannot be intercepted: the `open` crate calls `/usr/bin/open` by absolute path); the browse URL is a pure function with a unit test (AC-63, AC-68); README added |
+| v1.4.9 (2026-11-24) | CP-5: unreadable directory exits 2; startup, warning and error paths are escaped; log writes ignore a closed stderr; `--verbose` omits the query string; `--open` uses a detached opener; AC-37, 60, 67, 69 strengthened; README install path (9.1, 9.3, 13) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -345,7 +346,7 @@ Options: `--port <N>` (default 3000), `--host <ADDR>` (default `127.0.0.1`), `--
 ### 9.1 Startup and exit behaviour
 
 - On success, print to stderr a line such as `Serving /abs/root at http://127.0.0.1:3000`.
-- Directory missing or not a directory: `error: directory not found: <path>` (or `not a directory`), exit **2**.
+- Directory missing, not a directory, or not readable: `error: directory not found: <path>`, `error: not a directory: <path>` or `error: cannot read directory: <path>: <reason>`, exit **2**. An unreadable directory is refused instead of silently serving an empty tree.
 - Port already in use, permission denied (port below 1024 without privilege), or address not available: `error: cannot bind <addr>:<port>: <reason>`, exit **1**. No automatic fallback to another port.
 - Invalid `--host` or `--port`: clap usage error, exit **2**.
 - `--port 0` asks the OS for a free port; the printed URL shows the real port.
@@ -367,7 +368,8 @@ The server still starts.
 
 - Default (stderr): the startup line, warnings, errors, and one line per **denied** request, e.g. `denied: outside-root GET /files/link-out/hosts`.
 - `--verbose`: additionally one line per request: `METHOD path status duration`.
-- Paths in log lines are escaped so control characters (CR, LF, ESC) cannot forge log lines.
+- Paths in log lines, **including the directory in the startup, warning and error messages**, are escaped so control characters (CR, LF, ESC) cannot forge log lines. Log writes never panic: they are ignored when stderr is closed.
+- `--verbose` logs the request path without the query string.
 - No metrics and no log files in the MVP.
 
 ## 10. Suggested Architecture (Rust)
@@ -693,7 +695,7 @@ site/
 | AC-34 | M2 | §7.1 whitelist | `/files/notes.txt`, `/files/.env` (both modes), `/files/docs/flow.html` | `404`; `404`; `200` |
 | AC-35 | M2 | §12.2 file kind | `/files/docs`, `/api/file?path=docs/dir.md`, `/api/file` (no parameter) | `404` for all three |
 | AC-36 | M2 | §7.1 both paths | `/files/public/config` | `404`; `public` absent from the tree |
-| AC-37 | M5 | §9.3 log safety | `curl -s "$BASE/files/%0d%0aX"`; inspect stderr | The `denied:` line is one line with the control characters escaped |
+| AC-37 | M5 | §9.3 log safety | `curl -s "$BASE/files/%0d%0aX"`; inspect stderr. Then start the server on a directory whose name contains a newline and `WARNING: forged line` | The `denied:` line is one line (the request path stays percent-encoded and never reaches the log with raw control bytes); the startup line is one line with the newline escaped as `\x0a`, and no line starts with `WARNING: forged` |
 
 ### 13.3 Deep links and live reload
 
@@ -721,7 +723,7 @@ site/
 
 | ID | M | Requirement | Verification | Expected |
 |---|---|---|---|---|
-| AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser README.md; echo $?` | stderr `error: directory not found: ...` / `not a directory`; exit `2` for both |
+| AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser README.md; echo $?`; `docs-browser <dir with mode 000>; echo $?` (skipped when running as root) | stderr `error: directory not found: ...` / `not a directory` / `cannot read directory`; exit `2` for all |
 | AC-61 | M5 | §9.1 port busy | Start two instances on port 4100 | Second prints `error: cannot bind 127.0.0.1:4100: ...`; exit `1` |
 | AC-62 | M5 | §9.1 `--port 0` | `docs-browser tests/fixtures/site --port 0` | Startup line shows a non-zero port that answers `200` |
 | AC-63 | M5 | §9.1 `--open` | macOS: run with `--open`; the runner does this only when `DOCS_BROWSER_SUITE_OPEN=1` is set, because it opens a real tab. Linux container (no desktop): run with `--open` | macOS: the OS accepts the request to open `http://127.0.0.1:<port>/` (no `warning:` on stderr) and the server answers `200`. Linux: stderr contains `warning: could not open a browser for http://127.0.0.1:<port>/` and the server still answers `200` |

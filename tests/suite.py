@@ -80,11 +80,12 @@ class Server:
         fd, self.stderr_path = tempfile.mkstemp(prefix="docs-browser-stderr-")
         os.close(fd)
         t0 = time.time()
-        self.proc = subprocess.Popen(
-            [self.binary, self.root, "--port", str(self.port)] + self.extra,
-            stdout=subprocess.DEVNULL,
-            stderr=open(self.stderr_path, "wb"),
-        )
+        with open(self.stderr_path, "wb") as err:
+            self.proc = subprocess.Popen(
+                [self.binary, self.root, "--port", str(self.port)] + self.extra,
+                stdout=subprocess.DEVNULL,
+                stderr=err,
+            )
         for _ in range(100):
             try:
                 socket.create_connection(("127.0.0.1", self.port), timeout=0.2).close()
@@ -109,6 +110,7 @@ class Server:
                 self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+                self.proc.wait()
         if self.stderr_path and os.path.exists(self.stderr_path):
             os.unlink(self.stderr_path)
 
@@ -774,11 +776,13 @@ class Proc:
         os.close(fd)
         e = dict(os.environ)
         e.update(env or {})
-        self.proc = subprocess.Popen([ctx["bin"]] + args, stdout=subprocess.DEVNULL,
-                                     stderr=open(self.err_path, "wb"), env=e, cwd=cwd)
+        with open(self.err_path, "wb") as err:
+            self.proc = subprocess.Popen([ctx["bin"]] + args, stdout=subprocess.DEVNULL,
+                                         stderr=err, env=e, cwd=cwd)
 
     def stderr(self):
-        return open(self.err_path, encoding="utf-8", errors="replace").read()
+        with open(self.err_path, encoding="utf-8", errors="replace") as f:
+            return f.read()
 
     def wait_for_stderr(self, needle, timeout=5.0):
         end = time.time() + timeout
@@ -797,6 +801,7 @@ class Proc:
                 self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
+                self.proc.wait()
         if os.path.exists(self.err_path):
             os.unlink(self.err_path)
 
@@ -829,20 +834,49 @@ def ac_37(ctx):
     srv = server(ctx)
     get(PORT, "/files/%0d%0aX")
     time.sleep(0.2)
-    lines = [ln for ln in srv.stderr().split("\n") if "%0d%0aX" in ln]
     raw = srv.stderr()
-    ok = len(lines) == 1 and lines[0].startswith("denied:") and "\r" not in raw
+    lines = [ln for ln in raw.split("\n") if "%0d%0aX" in ln]
+    has_cr = "\r" in raw
     stray = [ln for ln in raw.split("\n") if ln == "X"]
-    return ok and not stray, f"denied lines for the request={len(lines)} carriage_returns={'\r' in raw} stray_X_lines={len(stray)}"
+    request_ok = len(lines) == 1 and lines[0].startswith("denied:") and not has_cr and not stray
+    # A request path never reaches the log with real control bytes, so also try the one input that can:
+    # a directory whose name contains a newline and tries to forge a WARNING line.
+    outer = tempfile.mkdtemp(prefix="docs-browser-forge-")
+    forged = os.path.join(outer, "x\nWARNING: forged line\ny")
+    os.makedirs(forged)
+    open(os.path.join(forged, "a.md"), "w").write("# a")
+    pr = Proc(ctx, [forged, "--port", "4117"])
+    try:
+        pr.wait_for_stderr("Serving")
+        err = pr.stderr()
+    finally:
+        pr.stop()
+        shutil.rmtree(outer, ignore_errors=True)
+    forged_lines = [ln for ln in err.split("\n") if ln.startswith("WARNING: forged")]
+    name_ok = len(err.strip().split("\n")) == 1 and not forged_lines and "\\x0a" in err
+    return request_ok and name_ok, (f"request: denied lines={len(lines)} carriage_returns={has_cr}; "
+                                    f"directory name: stderr lines={len(err.strip().splitlines())} forged_lines={len(forged_lines)}")
 
 
 @ac("AC-60")
 def ac_60(ctx):
     a = run_cli(ctx, ["/no/such/dir"])
     b = run_cli(ctx, [os.path.join(FIXTURE_SITE, "README.md")])
+    locked = tempfile.mkdtemp(prefix="docs-browser-locked-")
+    os.chmod(locked, 0)
+    try:
+        if os.access(locked, os.R_OK | os.X_OK):
+            c = None  # running as root: permission checks are bypassed, so this case cannot be tested
+        else:
+            c = run_cli(ctx, [locked])
+    finally:
+        os.chmod(locked, 0o755)
+        os.rmdir(locked)
     ok = (a[0] == 2 and "error: directory not found: /no/such/dir" in a[2]
-          and b[0] == 2 and "error: not a directory:" in b[2])
-    return ok, f"missing dir: exit={a[0]} {a[2].strip()[:70]!r}; file: exit={b[0]} {b[2].strip()[:70]!r}"
+          and b[0] == 2 and "error: not a directory:" in b[2]
+          and (c is None or (c[0] == 2 and "error: cannot read directory:" in c[2])))
+    unreadable = "skipped (root)" if c is None else f"exit={c[0]} {c[2].strip()[:60]!r}"
+    return ok, f"missing dir: exit={a[0]}; file: exit={b[0]} {b[2].strip()[:50]!r}; unreadable dir: {unreadable}"
 
 
 @ac("AC-61")
@@ -958,13 +992,16 @@ def ac_69(ctx):
         err = pr.stderr()
     finally:
         pr.stop()
-    return code == 1 and "error: cannot bind" in err, f"exit={code} stderr={err.strip()[:100]!r}"
+    ok = code == 1 and "error: cannot bind" in err and "Permission denied" in err
+    return ok, f"exit={code} stderr={err.strip()[:100]!r} (the reason must be 'Permission denied', not a busy port)"
 
 
 @ac("AC-67")
 def ac_67(ctx):
-    """Benchmark on the PRD 3.1 workload: 5,000 files of 4 KB, depth 6. Writes docs/benchmark.md on macOS."""
+    """Benchmark on the PRD 3.1 workload: 5,000 files of 4 KB, depth 6. With --write-benchmark on macOS it
+    also writes docs/benchmark.md. It fails only if the server never answers; missed targets are listed."""
     root = tempfile.mkdtemp(prefix="docs-browser-bench-")
+    started = first = repeat = None
     try:
         body = ("# Heading\n\n" + "lorem ipsum dolor sit amet " * 150 + "\n")[:4096]
         for i in range(5000):
@@ -976,38 +1013,42 @@ def ac_67(ctx):
         t0 = time.time()
         pr = Proc(ctx, [root, "--port", "4116"])
         try:
-            started = None
             while time.time() - t0 < 10:
                 try:
-                    socket.create_connection(("127.0.0.1", 4116), timeout=0.05).close()
-                    started = time.time() - t0
-                    break
+                    if get(4116, "/")[0] == 200:  # a real response: the tree scan has finished too
+                        started = time.time() - t0
+                        break
                 except OSError:
                     time.sleep(0.005)
-            t1 = time.time(); get(4116, "/api/tree"); first = time.time() - t1
-            t2 = time.time(); get(4116, "/api/tree"); repeat = time.time() - t2
+            if started is not None:
+                t1 = time.time(); get(4116, "/api/tree"); first = time.time() - t1
+                t2 = time.time(); get(4116, "/api/tree"); repeat = time.time() - t2
         finally:
             pr.stop()
     finally:
         shutil.rmtree(root, ignore_errors=True)
+    if started is None:
+        return False, "the server never answered within 10 s"
     size = os.path.getsize(ctx["bin"]) / (1024 * 1024)
-    targets = [("Process start to listening", started, 0.5, "s"), ("`GET /api/tree`, first request", first, 1.0, "s"),
-               ("`GET /api/tree`, repeat (cached)", repeat, 0.05, "s")]
+    targets = [("Process start to the first response", started, 0.5), ("`GET /api/tree`, first request", first, 1.0),
+               ("`GET /api/tree`, repeat (cached)", repeat, 0.05)]
     lines = ["# Benchmark (PRD 3.1)", "",
-             f"Measured by `tests/suite.py` (AC-67) on {ctx['platform']}, release build of the binary at `{os.path.relpath(ctx['bin'], ROOT)}`.",
+             f"Measured by `tests/suite.py` (AC-67) on {ctx['platform']}, release build `{os.path.basename(ctx['bin'])}`.",
              "Workload: 5,000 Markdown files of about 4 KB each, directory depth 6, warm file cache, one run.", "",
              "| Measure | Target | Measured | Met |", "|---|---|---|---|"]
     misses = []
-    for name, got, limit, unit in targets:
-        met = got is not None and got <= limit
+    for name, got, limit in targets:
+        met = got <= limit
         if not met:
             misses.append(name)
-        lines.append(f"| {name} | <= {limit * (1000 if limit < 1 else 1):g} {'ms' if limit < 1 else 's'} | {got * 1000:.0f} ms | {'yes' if met else 'NO'} |")
-    lines.append(f"| File saved to preview re-rendered | <= 2 s | see the AC-43 row of the suite (about 0.5 s measured) | yes |")
+        target_txt = f"<= {limit * 1000:.0f} ms" if limit < 1 else f"<= {limit:g} s"
+        lines.append(f"| {name} | {target_txt} | {got * 1000:.0f} ms | {'yes' if met else 'NO'} |")
+    lines.append("| File saved to preview re-rendered | <= 2 s | measured by the AC-43 row of the suite | see AC-43 |")
     lines.append(f"| Release binary size | recorded | {size:.1f} MiB | n/a |")
     lines += ["", "Misses: " + (", ".join(misses) if misses else "none") + "."]
-    if ctx["platform"] == "darwin":
-        open(os.path.join(ROOT, "docs", "benchmark.md"), "w").write("\n".join(lines) + "\n")
+    if ctx["platform"] == "darwin" and ctx.get("write_benchmark"):
+        with open(os.path.join(ROOT, "docs", "benchmark.md"), "w") as f:
+            f.write("\n".join(lines) + "\n")
     return True, (f"start={started * 1000:.0f}ms first_tree={first * 1000:.0f}ms repeat_tree={repeat * 1000:.0f}ms "
                   f"binary={size:.1f}MiB misses={misses or 'none'}")
 
@@ -1019,6 +1060,7 @@ def main():
     p.add_argument("--platform", default=sys.platform)
     p.add_argument("--bin", default=os.path.join(ROOT, "target", "release", "docs-browser"))
     p.add_argument("--chrome", default=None, help="Chrome binary for the browser checks")
+    p.add_argument("--write-benchmark", action="store_true", help="AC-67: write docs/benchmark.md (macOS)")
     p.add_argument("--only", default="", help="comma-separated IDs to run (default: all rows of the milestone)")
     args = p.parse_args()
 
@@ -1028,7 +1070,8 @@ def main():
         if args.bin == os.path.join(ROOT, "target", "release", "docs-browser"):
             sh(["cargo", "build", "--release", "--quiet"], cwd=ROOT)
     args.bin = os.path.abspath(args.bin)
-    ctx = {"bin": args.bin, "platform": args.platform, "servers": {}, "chrome": args.chrome}
+    ctx = {"bin": args.bin, "platform": args.platform, "servers": {}, "chrome": args.chrome,
+           "write_benchmark": args.write_benchmark}
     atexit.register(lambda: [s.stop() for s in ctx["servers"].values()])
     rows = prd_rows()
     sel = [(i, m) for i, m in rows if args.milestone in ("all", m)]

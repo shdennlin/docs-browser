@@ -165,7 +165,7 @@ impl Pipeline {
                 }
                 Err(e) => {
                     // Keep serving the previous tree; the next event retries (PRD 8.3).
-                    eprintln!("error: tree rebuild failed: {e}; keeping the previous tree");
+                    crate::elog!("error: tree rebuild failed: {e}; keeping the previous tree");
                 }
             }
         }
@@ -276,7 +276,7 @@ pub fn start_watcher(
             Relevance::Ignore => {}
         },
         Err(e) => {
-            eprintln!("warning: watcher error: {e}");
+            crate::elog!("warning: watcher error: {e}");
             let _ = tx.send(Batch { paths: HashSet::new(), rescan: true });
         }
     };
@@ -311,7 +311,7 @@ pub fn init_live<H>(
     match start(root, tx) {
         Ok(handle) => Some((handle, rx)),
         Err(reason) => {
-            eprintln!("warning: live reload disabled: {reason}");
+            crate::elog!("warning: live reload disabled: {reason}");
             *state.unavailable.write().expect("unavailable lock") = Some(reason);
             None
         }

@@ -11,8 +11,17 @@ docs-browser ./docs --port 8080 --open
 
 ## Install
 
+From a checkout of this repository:
+
 ```bash
-cargo install --locked --git <repository> --tag v0.1.0
+cargo install --locked --path .
+```
+
+From a git URL, pinned to a release tag (replace the URL with where you host the repository; this
+repository has no remote yet):
+
+```bash
+cargo install --locked --git <URL> --tag v0.1.0
 ```
 
 `--locked` makes cargo use the committed `Cargo.lock`, which is what pins exact dependency versions.
@@ -32,8 +41,8 @@ docs-browser [OPTIONS] [DIRECTORY]
   -V, --version      print the version
 ```
 
-- Exit codes: `0` normal stop, `1` runtime error such as a port already in use, `2` bad usage or a directory
-  that does not exist.
+- Exit codes: `0` normal stop, `1` runtime error such as a port already in use, `2` bad usage or a
+  directory that is missing, not a directory, or cannot be read.
 - The URL is printed at startup (`Serving <folder> at http://127.0.0.1:3000`).
 - Only Markdown (`.md`, `.markdown`) and HTML (`.htm`, `.html`) files are listed. A page can also load the
   CSS, JavaScript, images and fonts next to it. Nothing else is served.

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use docs_browser::resolve::Resolver;
-use docs_browser::server::{router, AppState};
+use docs_browser::server::{escape_log, router, AppState};
 use docs_browser::watch;
 
 #[derive(Parser)]
@@ -32,6 +32,11 @@ struct Cli {
     verbose: bool,
 }
 
+/// A path for a message: control characters are escaped, so a directory name cannot forge log lines.
+fn shown(path: &std::path::Path) -> String {
+    escape_log(&path.display().to_string())
+}
+
 fn parse_host(s: &str) -> Result<IpAddr, String> {
     if s.eq_ignore_ascii_case("localhost") {
         return Ok(IpAddr::V4(Ipv4Addr::LOCALHOST));
@@ -50,7 +55,7 @@ async fn main() {
     let code = match run().await {
         Ok(()) => 0,
         Err(f) => {
-            eprintln!("error: {}", f.message);
+            docs_browser::elog!("error: {}", f.message);
             f.code
         }
     };
@@ -64,18 +69,22 @@ async fn run() -> Result<(), Failure> {
     match std::fs::metadata(&cli.directory) {
         Ok(m) if m.is_dir() => {}
         Ok(_) => {
-            return Err(Failure { code: 2, message: format!("not a directory: {}", cli.directory.display()) })
+            return Err(Failure { code: 2, message: format!("not a directory: {}", shown(&cli.directory)) })
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(Failure { code: 2, message: format!("directory not found: {}", cli.directory.display()) })
+            return Err(Failure { code: 2, message: format!("directory not found: {}", shown(&cli.directory)) })
         }
         Err(e) => {
-            return Err(Failure { code: 2, message: format!("cannot read {}: {e}", cli.directory.display()) })
+            return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&cli.directory)) })
         }
+    }
+    // A directory that exists but cannot be listed would start and serve an empty tree in silence.
+    if let Err(e) = std::fs::read_dir(&cli.directory) {
+        return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&cli.directory)) });
     }
     let resolver = Resolver::new(&cli.directory, cli.include_hidden).map_err(|e| Failure {
         code: 2,
-        message: format!("cannot use {}: {e}", cli.directory.display()),
+        message: format!("cannot use directory: {}: {e}", shown(&cli.directory)),
     })?;
     let root = resolver.root().to_path_buf();
 
@@ -86,21 +95,21 @@ async fn run() -> Result<(), Failure> {
     let local = listener.local_addr().map_err(|e| Failure { code: 1, message: e.to_string() })?;
 
     if !local.ip().is_loopback() {
-        eprintln!(
+        docs_browser::elog!(
             "WARNING: binding to {} exposes every visible file under {} to your network.",
             local.ip(),
-            root.display()
+            shown(&root)
         );
     }
 
     let state = AppState::new(resolver, local);
     state.verbose.store(cli.verbose, std::sync::atomic::Ordering::Relaxed);
-    eprintln!("Serving {} at http://{}", root.display(), local);
+    docs_browser::elog!("Serving {} at http://{}", shown(&root), local);
 
     if cli.open {
         let url = docs_browser::server::browse_url(local);
-        if let Err(e) = open::that(&url) {
-            eprintln!("warning: could not open a browser for {url}: {e}");
+        if let Err(e) = open::that_detached(&url) {
+            docs_browser::elog!("warning: could not open a browser for {url}: {e}");
         }
     }
 
