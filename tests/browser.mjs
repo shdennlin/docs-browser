@@ -784,8 +784,7 @@ checks['AC-75'] = async (cdp) => {
     const side = await q("({sl:document.getElementById('side-scroll').scrollLeft, wide:document.getElementById('side-scroll').scrollWidth > document.getElementById('side-scroll').clientWidth, tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left - document.getElementById('sidebar').getBoundingClientRect().left)})");
     // scrolled far to the right, every control is still in view
     // the outer panel must never scroll (a browser may do it on focus); it snaps back at once
-    await q("(function(){var s=document.getElementById('sidebar');var d=document.createElement('div');d.id='probe-wide';d.style.cssText='width:2000px;height:1px';s.appendChild(d);s.scrollLeft=60;return true})()");
-    const outerBefore = await q("document.getElementById('sidebar').scrollLeft");
+    const outerBefore = await q("(function(){var s=document.getElementById('sidebar');var d=document.createElement('div');d.id='probe-wide';d.style.cssText='width:2000px;height:1px';s.appendChild(d);s.scrollLeft=60;return s.scrollLeft})()");
     await sleep(100);
     const outerLeft = await q("document.getElementById('sidebar').scrollLeft");
     await q("document.getElementById('probe-wide').remove(); true");

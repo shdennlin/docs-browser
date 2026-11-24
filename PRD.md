@@ -30,6 +30,8 @@
 | v1.4.20 (2026-11-25) | Light/dark toggle button (remembered; reset follows the system again) and lighter quote text, 7:1 contrast (6 Theme; AC-76) |
 | v1.4.21 (2026-11-25) | The list controls fit on one line: expand all, collapse all and wrap became icon buttons (7.3; AC-75) |
 | v1.4.22 (2026-11-25) | Fix: the search box and buttons no longer scroll away with a sideways-scrolled list (they sit outside the scrolling part); buttons wrap at 180 px (7.3; AC-75) |
+| v1.4.23 (2026-11-25) | File name search is fuzzy, ranked and shows full paths (7.3; AC-73); the outer panel snaps back if a browser scrolls it (AC-75) |
+| v1.4.24 (2026-11-25) | Fix: contents links to headings with an emoji selector (`🛡️`, `🕵️`) did not jump; the anchor lookup now ignores U+FE0E/U+FE0F/U+200D and leading hyphens (7.4; AC-77) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -118,7 +120,7 @@ The MVP does not provide:
 - Authentication, TLS/HTTPS, or multi-user access
 - Any write operation: editing, uploading, deleting, renaming
 - Git integration
-- Full IDE functionality, a search index or ranking, regular expressions or fuzzy search, or a plugin system
+- Full IDE functionality, a search index, regular expressions, fuzzy matching of file contents (file names are fuzzy, 7.3), or a plugin system
 - Preview of file types other than Markdown and HTML
 - Windows support
 - A configuration file or environment-variable configuration (CLI flags only)
@@ -291,7 +293,7 @@ Any other extension, including no extension, returns 404 even if the path is vis
 
 The top of the file list has a search box, a `Names` / `Contents` switch and two buttons, `Expand all` and `Collapse all`. The `/` key focuses the box (when no other field has focus) and `Escape` clears it.
 
-- **Names (default):** typing filters the tree to the files whose path contains every word of the query, in any case. The folders that lead to a match are shown open while the filter is active; they are not remembered, so clearing the box restores the folders as the user had them. With no match the list says "No file name matches".
+- **Names (default):** typing searches the file paths fuzzily: the letters of each word must appear in order, in any case (`arcmd` finds `docs/architecture.md`), and every word of the query must match. The tree is replaced by a flat list of the matching files, best match first, each with its badge and its full path (folder part dimmed, matched letters marked). A plain substring beats scattered letters, a match inside the file name beats one in a folder name, a match at the start of a word beats one in the middle, gaps cost points, ties go to the shorter then the alphabetically first path. At most 200 files are listed, then a line says how many more match. With no match the list says "No file name matches"; clearing the box brings the tree back with the folders as the user had them.
 - **Contents:** typing (after 250 ms, at least two characters) calls `GET /api/search` and replaces the tree with a result list: the path, the number of matching lines and up to three lines with the hit marked and the line number. Clicking a result opens the file. The tree comes back when the switch returns to `Names`. A tree event while a content search is shown repeats the search.
 - `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
 - Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
@@ -302,7 +304,7 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 
 ### 7.4 Outline and settings
 
-- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted); clicking a heading scrolls to it and sets the `#hash`. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
+- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
@@ -722,10 +724,11 @@ site/
 | AC-70 | M3 | §5 sidebar width | Browser, in a 1280 px window: drag the divider 120 px to the right (and release the pointer capture without a pointerup, then move the mouse once), reload, drag far right and far left; seed `localStorage` with `5000`, `12`, ` 420 ` and `abc`; seed `600`, shrink the window to 800 px and grow it back; double click the divider; focus it and press Right and Left | 300 becomes exactly 420 (stored, and 420 after the reload) and `body.resizing` is cleared after the lost capture; far right gives 768 (60% of the window), far left 180; the seeded values give 768, 180, 300 and 300; 600 becomes 480 in the 800 px window and 600 again afterwards; the double click gives 300; `aria-valuemin/now/max` read `180/300/768`; Right gives 316 and Left gives 300 |
 | AC-71 | M3 | §6 theme | Browser in dark mode `/?file=docs/code.md` then `docs/architecture.md`; then in light mode | Dark: body `rgb(40, 42, 54)` on text `rgb(248, 248, 242)`, h1 `rgb(255, 85, 85)`, h2 `rgb(255, 184, 108)`, links `rgb(139, 233, 253)`, a highlighted keyword in another colour than the text, Mermaid nodes `rgb(68, 71, 90)` and lines `rgb(139, 233, 253)`; light: white background and h1 the same colour as the text |
 | AC-72 | M3 | §7.3 badges, expand/collapse | Browser `/`: read the badges, click `Collapse all`, `Expand all`, `Collapse all` | `README.md` and Markdown files read `MD`, `docs/flow.html` reads `HTML`; the open folders go to 0, to all of them, to 0 |
-| AC-73 | M3 | §7.3 name filter | Browser: type `DOCS/ARCH`, `docs flow`, `zzzz-nothing`, then clear; press `/` | Only `docs/architecture.md` with its folder open; only `docs/flow.html`; "No file name matches"; the full list returns with the folders closed again; the box has focus after `/` |
+| AC-73 | M3 | §7.3 fuzzy file name search | Browser: type `arcmd`, `mda`, `docs flow`, `zzzz-nothing`, clear, `srch-tar` and click the result; press `/` | `arcmd` lists `docs/architecture.md` first as a flat list with the full path, an `MD` badge and the matched letters marked; `mda` and `zzzz-nothing` give "No file name matches"; `docs flow` lists `docs/flow.html` first; clearing brings the tree back with the folders closed; the click opens `Search target`; the box has focus after `/` |
 | AC-74 | M3 | §7.3, §11 content search | Browser, `Contents` switch: type `x`, `ZEBRA-needle`, click the result, type a text nobody has; `fetch('/api/search?q=a')`, `fetch('/api/search?q=hidden')` | "at least 2 characters"; one result `docs/search-target.md`, line `3:`, hit `zebra-needle`, tree hidden; the preview opens and the URL is `?file=docs/search-target.md`; "No file contains"; status `400`; nothing from `.hidden/` |
-| AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin), `Section n` entries in the heading colours with exactly one highlighted: the section scrolled to; a folder icon differs between open and closed; with `Wrap` off and a 180 px list, selecting a wide row leaves the list at `scrollLeft` 0 and the toolbar in place, and after scrolling the list fully to the right all eight controls of the toolbar are still inside the list; a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
+| AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin), `Section n` entries in the heading colours with exactly one highlighted: the section scrolled to; a folder icon differs between open and closed; with `Wrap` off and a 180 px list, selecting a wide row leaves the list at `scrollLeft` 0 and the toolbar in place, after scrolling the list fully to the right all eight controls of the toolbar are still inside the list, and if the outer panel is scrolled (`scrollLeft = 60`) it is back at 0 at once; a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
 | AC-76 | M3 | §6 theme toggle, quote contrast | Browser with the system in light mode: press the theme button, again, again and reload; `Reset to defaults`; store `purple` and reload | Dark `rgb(40, 42, 54)`, then light, then dark again and still dark after the reload (`docs-browser.theme` is `dark`); the highlight.js sheets switch with it; quote text against the page is at least 7:1; reset gives light and removes the stored value; the bad value is ignored |
+| AC-77 | M3 | §7.4 contents links, outline | Browser `/?file=docs/toc.md` (headings with emoji, `&`, `?` and a duplicate): click each contents link, including `#threat-detection--response` and `#%EF%B8%8F-threat-detection--response` for `🛡️ Threat Detection & Response`; click outline entries 3 to 7; open `/?file=docs/toc.md#-automation-mode` | Every click leaves the heading within 80 px of the top of the panel and sets the `#hash`; the deep link lands on the heading |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -828,6 +831,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.3 name filter, search, badges | AC-72, AC-73, AC-74, UT-17, UT-18 |
 | §7.3 folder buttons, wrap; §7.4 outline, settings | AC-75 |
 | §6 theme toggle | AC-76 |
+| §7.4 contents links and outline jumps | AC-77 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -934,6 +938,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.6 | Dracula theme, rainbow headings, `MD`/`HTML` badges, expand/collapse all, name filter, full-text search and `GET /api/search`, default port 4747 (added after M5, on request) | T-3.5 | AC-71, AC-72, AC-73, AC-74, UT-17, UT-18, AC-64 |
 | T-3.7 | Folder buttons, wrap toggle, full-panel HTML, floating outline, settings dialog (added on request) | T-3.6 | AC-75 |
 | T-3.8 | Light/dark toggle button and quote contrast (added on request) | T-3.7 | AC-76 |
+| T-3.9 | Fuzzy ranked file name search, outer-panel snap-back, lenient anchor lookup for emoji headings (added on request) | T-3.8 | AC-73, AC-75, AC-77 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 
