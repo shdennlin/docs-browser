@@ -1,0 +1,871 @@
+# Local Docs Browser — PRD (v1.4)
+
+## 0. Revision Notes
+
+| Version | Change |
+|---|---|
+| v1.1 | Sandboxed iframe, symlink-safe path resolution, deep-link URLs |
+| v1.2 | Architecture switched to Rust (axum + notify + clap + rust-embed) |
+| v1.3 | Target user and platforms, risk register, Host/Origin validation, `/files/*` sandbox header, acceptance criteria, task breakdown |
+| v1.4 | `/files/*` serves an **extension whitelist** only; visibility checked on both the requested and the canonical path and compared case-insensitively; one coherent symlink policy (followed, listed, watched, aliased); event pipeline rebuilt as *update state, then broadcast*; every acceptance criterion owned by exactly one milestone; unit tests separated from acceptance criteria; decisions D1 to D10 |
+
+Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
+
+## 1. Product Overview
+
+A lightweight local web server for browsing and previewing project documentation.
+
+The tool scans a target directory and provides:
+
+- A file tree on the left
+- A preview panel on the right
+- Markdown rendering
+- Mermaid diagram rendering
+- Raw HTML rendering (sandboxed)
+- Live reload when files change
+- Shareable deep-link URLs for every file
+
+Primary use case:
+
+```bash
+docs-browser .
+```
+
+Then open `http://127.0.0.1:3000` (the exact URL is printed at startup).
+
+### 1.1 Target user, platforms and browsers
+
+- **Target user:** a developer reading documentation in their own local repository, on their own machine, as a single user.
+- **Supported platforms (MVP):** macOS and Linux. Both are verified by running the full acceptance suite (T-5.3). Windows is **not supported** (see §14).
+- **Browsers:** current Chrome is the verification target. Safari and Firefox are best effort and not verified.
+- **Not a target:** serving documentation to other people, hosting on a shared machine, or exposing a directory to a network.
+
+## 2. Problem
+
+Developers often have documentation scattered across a repository:
+
+```text
+project/
+├── README.md
+├── CLAUDE.md
+├── docs/
+│   ├── architecture.md
+│   ├── flow.html
+│   └── api.md
+└── plans/
+    └── migration.md
+```
+
+Existing tools usually focus on only one use case: Markdown preview only, static HTML serving only, full documentation-site generation, or manual sidebar configuration. The goal is a zero-config local viewer for existing files.
+
+**Evidence from trying existing tools** (hands-on, 2026-11-24, on a fixture folder with `.md`, Mermaid and `.html` files):
+
+- `gh-markdown-preview`: renders Markdown and Mermaid and live-reloads, but has no file tree, serves `.html` as an unsandboxed same-origin page, and follows a symlink pointing outside its root (it served `/etc/hosts`).
+- `meread` 1.0.1: in directory mode serves only `README.md`; other paths return 404, Mermaid is shown as code, relative images 404, and `.html` is treated as Markdown.
+
+## 3. Goals
+
+The MVP should allow users to:
+
+1. Start the server with one command.
+2. Automatically scan the current directory.
+3. Browse files using a collapsible folder tree.
+4. Render `.md` files as formatted Markdown.
+5. Render Mermaid blocks inside Markdown.
+6. Render `.html` files as normal web pages, safely isolated.
+7. Automatically refresh previews when files change.
+8. Open any file directly by URL, and restore it on page refresh.
+
+### 3.1 Measurable targets
+
+Measured by task T-5.4. Conditions: release build, Apple-silicon Mac, SSD, warm file cache, 5,000 files of at most 20 KB each, directory depth at most 6. A miss is recorded and does not by itself block the MVP.
+
+| Target | Value |
+|---|---|
+| Process start to listening | ≤ 500 ms |
+| `GET /api/tree`, first request | ≤ 1 s |
+| `GET /api/tree`, repeat request (cached) | ≤ 50 ms |
+| File saved to preview re-rendered | ≤ 2 s |
+| Release binary size | recorded, no limit (dominated by Mermaid) |
+
+## 4. Non-Goals
+
+The MVP does not provide:
+
+- Documentation publishing, static-site export, or hosting for other people
+- Authentication, TLS/HTTPS, or multi-user access
+- Any write operation: editing, uploading, deleting, renaming
+- Git integration
+- Full IDE functionality, full-text search, or a plugin system
+- Preview of file types other than Markdown and HTML
+- Windows support
+- A configuration file or environment-variable configuration (CLI flags only)
+- Polling fallback when the OS file watcher is unavailable
+- Supporting `--host 0.0.0.0` as a safe mode. It works, but it is an explicitly unsafe mode (§4.1)
+
+### 4.1 Risk register
+
+| # | Risk | Blast radius | Mitigation / acceptance |
+|---|---|---|---|
+| R1 | Server bound to a non-loopback address | Every readable file under the root is readable by anyone on that network, and `Host` validation is off | Warn at startup (§9.2). **Accepted**: the user opted in. Origin check stays on (§12.1); whitelist and hidden rules still apply |
+| R2 | DNS rebinding | A remote page reads the served directory through the loopback server | `Host` and `Origin` validation (§12.1). **Accepted** for non-loopback binds (R1) |
+| R3 | An HTML file's script reads other files | Whole served root | `/files/*` sent with `Content-Security-Policy: sandbox`, plus iframe `sandbox` (§6, §12.4) |
+| R4 | Symlink, `..` or case-variant escape | Files outside the root, or ignored folders | Canonical-path check, both-path visibility, case-insensitive comparison (§12.2, §12.3) |
+| R5 | Secrets inside the root | Credentials | Whitelist of served extensions (§7.1); hidden and ignored paths unreadable by default. **Residual, accepted**: a whitelisted file (e.g. `.md`) containing a secret is served |
+| R6 | XSS through Markdown or Mermaid | Same origin as the app shell | Raw HTML off, link-scheme allowlist, Mermaid `strict`, app-shell CSP (§6, §12.5) |
+| R7 | Tampered vendored JavaScript | Everything the app shell can do | Pinned versions plus SHA-256 checked by a test (§12.6) |
+| R8 | Scanner or watcher exhausts resources | Local slowdown | Entry cap, depth cap, ignored folders never scanned or watched (§7, §8) |
+| R9 | Swap-to-symlink race between resolution and open | One out-of-root file read | **Accepted**: needs a local attacker with write access to the root |
+| R10 | A sandboxed HTML page makes outbound network requests | The page's own content can be sent out; it cannot read other served files | **Accepted**: the page is user-supplied and could do so in any browser |
+| R11 | OS watcher limits (inotify watch limit, FSEvents differences) | Live reload silently stops | Detect and tell the user: live reload disabled banner (§8.5) |
+| R12 | Browsers allow about 6 HTTP/1.1 connections per host; each tab holds one SSE stream | Many tabs on one server can stall requests | **Accepted**; server caps SSE streams at 32 (§8.3) |
+| R13 | Dev-use assumption: someone runs it on an untrusted multi-user machine | Other local users can reach the port | Out of target (§1.1); documented |
+
+## 5. User Experience
+
+### Start server
+
+```bash
+docs-browser .
+docs-browser ./docs --port 8080
+```
+
+### UI
+
+```text
+┌─────────────────────┬──────────────────────────────┐
+│ Files               │ Preview                      │
+│                     │                              │
+│ ▼ project           │ # Architecture               │
+│   README.md         │                              │
+│   CLAUDE.md         │ Web → API → Database        │
+│   ▼ docs            │                              │
+│     architecture.md │                              │
+│     flow.html       │                              │
+│     api.md          │                              │
+│   ▼ plans           │                              │
+│     migration.md    │                              │
+└─────────────────────┴──────────────────────────────┘
+```
+
+Clicking a file updates the preview without reloading the entire application.
+
+### Deep-link behaviour
+
+- Selecting a file updates the address bar, e.g. `http://127.0.0.1:3000/?file=docs/architecture.md`.
+- Opening that URL (or pressing refresh) loads the app with that file already selected and previewed.
+- The sidebar auto-expands all ancestor folders of the selected file and highlights it.
+- Browser Back/Forward move between previously viewed files.
+- Heading anchors use the URL hash: `/?file=docs/architecture.md#data-flow` scrolls to that heading.
+- File names with spaces, CJK or other non-ASCII characters work; the `file` value is percent-encoded in the URL.
+
+### Path identity
+
+Everywhere a file path appears (tree, `?file=`, API, SSE events) it is the **listed path**: the path as it appears in the tree, relative to the root, using `/`. A file reachable through an in-root symlink has one listed path per route (e.g. `docs/a.md` and `link-in/a.md`). Events for such a file are delivered for every listed path (§8.2).
+
+## 6. File Rendering
+
+### Markdown
+
+Supported: `.md`, `.markdown` (extension matched case-insensitively). Files are read as UTF-8; invalid bytes are replaced and a banner "File contained invalid UTF-8" is shown.
+
+Render: headings, tables, task lists, code blocks, links, images, GitHub-flavored Markdown. Task lists need the `markdown-it-task-lists` plugin (vendored, §12.6).
+
+**Raw inline HTML inside Markdown is disabled, with no opt-in in the MVP** (`markdown-it` option `html: false`). Rendering it in the app origin would bypass the isolation below (D3).
+
+**Links:**
+
+- Allowed schemes: `http`, `https`, `mailto`, and relative links. Any other scheme (`javascript:`, `data:`, `vbscript:`, `file:`) renders as inert text with no `href`.
+- Relative links to a supported file (`.md`, `.markdown`, `.html`, `.htm`) switch the preview in-app and update the URL without a full page load.
+- Relative links to any other whitelisted file open `/files/<path>` in a new tab; the sandbox header (§12.4) may stop a built-in viewer from rendering. Accepted.
+- Relative links that resolve outside the root, or to a file that is not whitelisted or not visible, render as plain text (D5).
+- External links open in a new tab with `rel="noopener noreferrer"`.
+- Link targets are percent-decoded once before resolution.
+- Heading anchors use a GitHub-compatible slug: lowercase, punctuation stripped, spaces to `-`, duplicates suffixed `-1`, `-2`; non-ASCII letters (e.g. CJK) are kept. The slug function lives in `frontend/lib.js` and is unit-tested.
+
+**Images:** a relative image path is resolved against the directory of the Markdown file that contains it, then rewritten to `/files/...`. `https` images are allowed by the app-shell CSP (§12.5).
+
+### Mermaid
+
+Blocks with the `mermaid` language tag render as diagrams. Mermaid runs with `securityLevel: 'strict'`. If a block fails to parse, that block shows an error box containing the parser message and the source; the rest of the page still renders.
+
+### HTML
+
+Supported: `.html`, `.htm`.
+
+HTML **must** render inside an `<iframe>`:
+
+```html
+<iframe
+  src="/files/docs/flow.html"
+  sandbox="allow-scripts allow-popups"
+  referrerpolicy="no-referrer">
+</iframe>
+```
+
+- `allow-same-origin` is **never** granted: the page runs in an opaque origin, so its scripts cannot read the parent DOM or call `/api/*` as the app.
+- `allow-top-navigation` and `allow-forms` are never granted.
+- **The iframe is not the only protection.** Every response from `/files/*` also carries `Content-Security-Policy: sandbox allow-scripts allow-popups`, so the same restrictions apply when someone opens `/files/docs/flow.html` directly as a top-level page (§12.4).
+
+Local relative assets work, because `<img>`, `<link rel=stylesheet>` and `<script src>` loads do not require CORS:
+
+```html
+<img src="./diagram.png">
+<link rel="stylesheet" href="./style.css">
+<script src="./app.js"></script>
+```
+
+**Accepted limitation (D4):** a sandboxed page has an opaque origin, so `fetch()`, `XMLHttpRequest` and web-font loads of relative files from inside the HTML fail. There is no opt-in flag in the MVP (§14).
+
+### Other states
+
+- A deep link to a file of an unsupported type shows "Unsupported file type".
+- A file larger than 5 MiB is not rendered by `/api/file`; the preview shows "File too large".
+- Navigating inside the iframe (a link between two HTML pages) stays in the iframe and does not update the address bar. Accepted.
+- API errors and a lost server connection: see §8.5.
+
+## 7. File Tree
+
+The sidebar:
+
+- Scans directories automatically
+- Lists folders and **supported** files only (`.md`, `.markdown`, `.html`, `.htm`)
+- Collapses and expands folders
+- Sorts folders before files
+- Hides folders that contain no supported file at any depth
+
+### 7.1 Visibility and the served-extension whitelist
+
+**Visibility.** A relative path is *visible* when none of its components is a dot-prefixed name and none equals, **compared case-insensitively**, one of the ignore-list names `.git`, `node_modules`, `dist`, `build`, `.cache`.
+
+- `--include-hidden` makes dot-prefixed components acceptable. The five ignore-list names are **always** excluded, even with `--include-hidden`; there is no override in the MVP.
+- Visibility is evaluated on **both** the listed path and the canonical path (§12.2). A symlink named `public` that points at `.git` is therefore not visible.
+
+**Served-extension whitelist (D7).** `/files/*` serves a file only when its extension, compared case-insensitively, is one of:
+
+```text
+html htm md markdown css js mjs svg png jpg jpeg gif webp avif ico bmp woff woff2 ttf otf
+```
+
+Any other extension, including no extension, returns 404 even if the path is visible. `/api/file` additionally accepts only `md` and `markdown`. Consequences: `.env`, `.json`, `.txt`, keys and other secrets are never served in either mode.
+
+`--include-hidden` therefore makes only **whitelisted files under dot-prefixed folders** (such as `.github/README.md`) visible and readable. That residual exposure is accepted (D8).
+
+### 7.2 Symlinks and limits
+
+- Symlinks whose canonical target is inside the root are listed and followed (D10); others are not listed (§12.3).
+- The scanner stops at 50,000 entries and the UI shows a "Tree truncated" banner. Maximum directory depth is 64.
+- The tree and the file index are built in memory and cached (§10.2).
+
+## 8. Live Reload
+
+The server watches the root and pushes events to the browser.
+
+### 8.1 Watch scope
+
+- The OS watch is registered on the canonical root, recursively. In-root symlink targets lie inside the root and are therefore already covered; no extra watches are registered for them (D10). Symlinks pointing outside the root are never watched.
+- Event paths are mapped to root-relative paths **lexically** (strip the canonical root prefix); `canonicalize` is not used on event paths, because a deleted path cannot be canonicalized.
+- Events whose relative path is not visible (§7.1) are dropped. The implementation should avoid watching ignored directories; whether `notify` allows that per platform is answered by T-0.3.
+
+### 8.2 State, classification and aliases
+
+The server keeps a **snapshot** (part of the cached tree, §10.2):
+
+- `index`: every visible whitelisted file → `{ canonical_rel, kind }`
+- `aliases`: `canonical_rel` → all listed paths that lead to it
+
+After a debounce window (default 200 ms), each affected relative path is classified against the snapshot:
+
+| In snapshot | On disk now | Result |
+|---|---|---|
+| yes | exists | `changed` |
+| yes | missing | `removed` (and the snapshot entry is deleted) |
+| no | exists and visible and whitelisted | file added: snapshot updated, `tree` |
+| no | missing | ignored |
+
+A created, deleted or renamed **directory**, a `notify` rescan or overflow notice, and any watcher error that signals lost events trigger a full rescan.
+
+Every `changed` and `removed` result is delivered once per **listed path** of that file (using `aliases`), so a viewer of `link-in/a.md` is notified when `docs/a.md` changes.
+
+### 8.3 Pipeline and SSE stream
+
+Order of operations is **update state, then broadcast** (never the reverse):
+
+```text
+notify -> debounce -> classify against snapshot -> update snapshot/tree (swap) -> broadcast
+```
+
+A `tree` event is emitted only **after** the new tree has been swapped in, so a client that re-fetches `/api/tree` on receipt always sees the new tree. At most one rebuild runs at a time; events arriving during a rebuild schedule exactly one more rebuild. If a rebuild fails (I/O error), the previous tree is kept, the error is logged, and the next event retries.
+
+`GET /api/events` is a Server-Sent Events stream:
+
+- Messages are JSON: `{ "type": <t>, "path": "docs/architecture.md" }` where `<t>` is `changed`, `removed`, `tree`, `resync`, `unavailable` or `bye`. `path` is present only for `changed` and `removed`.
+- A keep-alive SSE comment is sent every 15 s.
+- The broadcast channel is bounded. A subscriber that lags receives one `resync`; the client then re-fetches the tree and the open file.
+- The server allows at most 32 concurrent SSE streams; further requests get 503 (§4.1 R12).
+- On SIGINT or SIGTERM the server sends `bye` to every stream, closes them and exits (§9.1). Open streams never block shutdown: a 2 s deadline applies.
+
+### 8.4 Client behaviour
+
+- Open Markdown file `changed`: re-fetch `/api/file` and re-render, keeping scroll position.
+- Open HTML file `changed`, **or any changed asset** (CSS, JS, image) while an HTML file is open: reload the iframe.
+- Open file `removed`: the preview shows "File no longer exists" and keeps the URL. If the file reappears (a `tree` event includes it), the preview restores itself.
+- `tree`: re-fetch `/api/tree`, re-render the sidebar, preserve expanded folders.
+- `resync` and every reconnect: re-fetch tree and open file.
+
+### 8.5 Failure behaviour
+
+- If the OS watcher cannot start (for example the inotify watch limit is reached), the server keeps serving, prints `warning: live reload disabled: <reason>` and sends `{ "type": "unavailable" }` on `/api/events`. The UI shows "Live reload unavailable".
+- If an API request fails or the SSE stream closes, the UI shows "Server unreachable, retrying" and keeps the last rendered content; `EventSource` reconnects automatically and the banner clears after the resync.
+- On `bye` the UI shows "Server stopped".
+
+## 9. CLI
+
+```bash
+docs-browser [directory]
+```
+
+`directory` defaults to `.`.
+
+Options: `--port <N>` (default 3000), `--host <ADDR>` (default `127.0.0.1`), `--open`, `--include-hidden`, `--verbose` (alias `-v`), `--help`, `--version`.
+
+### 9.1 Startup and exit behaviour
+
+- On success, print to stderr a line such as `Serving /abs/root at http://127.0.0.1:3000`.
+- Directory missing or not a directory: `error: directory not found: <path>` (or `not a directory`), exit **2**.
+- Port already in use, permission denied (port below 1024 without privilege), or address not available: `error: cannot bind <addr>:<port>: <reason>`, exit **1**. No automatic fallback to another port.
+- Invalid `--host` or `--port`: clap usage error, exit **2**.
+- `--port 0` asks the OS for a free port; the printed URL shows the real port.
+- `--open`: opens the printed URL in the default browser. With a wildcard host (`0.0.0.0`) it opens `http://127.0.0.1:<port>/`. If opening fails (for example on a headless host), print a warning and continue.
+- No configuration file is read.
+- SIGINT or SIGTERM: close SSE streams (§8.3) and exit **0** within 2 s.
+
+### 9.2 Non-loopback host: warn only (D2)
+
+When `--host` is not a loopback address, print to stderr before serving:
+
+```text
+WARNING: binding to <addr> exposes every visible file under <root> to your network.
+```
+
+The server still starts.
+
+### 9.3 Logging
+
+- Default (stderr): the startup line, warnings, errors, and one line per **denied** request, e.g. `denied: outside-root GET /files/link-out/hosts`.
+- `--verbose`: additionally one line per request: `METHOD path status duration`.
+- Paths in log lines are escaped so control characters (CR, LF, ESC) cannot forge log lines.
+- No metrics and no log files in the MVP.
+
+## 10. Suggested Architecture (Rust)
+
+The deliverable is a **single self-contained binary**, no runtime dependencies:
+
+```bash
+cargo install --git <repo> --tag vX.Y.Z    # `cargo install docs-browser` only if the crate name is free (§15)
+docs-browser .
+```
+
+### 10.1 Crates
+
+Versions are chosen in task T-0.1, written to `Cargo.toml` as minor-pinned requirements, and `Cargo.lock` is committed.
+
+| Concern | Crate | Notes |
+|---|---|---|
+| HTTP server, routing | `axum` + `tokio` | **Wildcard route syntax differs between axum 0.7 (`/*path`) and 0.8 (`/{*path}`).** T-0.1 compiles a wildcard route against the chosen version first. axum's `Path` and `Query` extractors already percent-decode; see §12.2 |
+| SSE streams, header layers | `tokio-stream`, `tower-http` | Final list confirmed in T-0.1 |
+| File watching | `notify` + `notify-debouncer-mini` | The debouncer cannot tell removal from change; §8.2 classifies against the snapshot instead |
+| CLI parsing | `clap` (derive) | |
+| Embedded frontend | `rust-embed` | |
+| Directory scan | `walkdir`, `follow_links(false)` | Symlinks are handled manually (§10.3) |
+| MIME types | fixed table for the whitelist (`mime_guess` allowed as a fallback source) | `.js` must map to `text/javascript`, `.svg` to `image/svg+xml` |
+| Errors | `anyhow` | |
+| Open browser | `open` | |
+| Serialization | `serde`, `serde_json` | |
+
+Edition 2021 and the release profile (`opt-level = 3`, `lto = "thin"`, `strip = true`) follow the sibling project `claude-code-stats`.
+
+### 10.2 State ownership and concurrency
+
+```text
+AppState {
+  root:           PathBuf                       // canonical, set once at startup
+  include_hidden: bool                          // set once at startup
+  tree:           RwLock<Arc<TreeState>>        // swapped, never mutated in place
+  events:         broadcast::Sender<Event>      // bounded
+  sse_slots:      Semaphore(32)
+}
+
+TreeState {
+  entries:  Vec<TreeEntry>                      // what /api/tree returns
+  index:    HashMap<RelPath, FileInfo>          // visible whitelisted files (snapshot, §8.2)
+  aliases:  HashMap<RelPath, Vec<RelPath>>      // canonical_rel -> listed paths
+  truncated: bool
+}
+```
+
+- The watcher runs on its own thread and sends raw events into a channel.
+- One **state task** consumes debounced events, classifies, builds the next `TreeState`, swaps it in, then broadcasts (§8.3). It is the only writer of `tree`.
+- Handlers only read `AppState`; the request path never mutates it.
+
+### 10.3 Backend responsibilities
+
+- Serve the embedded shell for `/` (including `/?file=...`).
+- `GET /api/tree`: return the cached tree.
+- `GET /api/file`: read a Markdown file after the shared resolver (§12.2).
+- `GET /files/*`: read-only serving through the same resolver, whitelist enforced, headers in §11.
+- `GET /api/events`: the SSE stream (§8.3).
+- **Scanner and symlinks:** walk with `follow_links(false)`. For each symlink entry, call `canonicalize`.
+  - Skip it if the target is outside the root, dangling, or not visible (§7.1, both paths).
+  - A **directory** symlink whose canonical target is the current directory or **an ancestor of it** is a cycle: it is omitted from the tree.
+  - Any other in-root symlink is listed and, for directories, expanded. The same target can therefore appear under several listed paths; the entry cap and the depth cap bound any blow-up.
+  - `aliases` records every listed path per canonical path.
+- **One resolver:** a single `resolve(root, include_hidden, input)` function (§12.2) is the only code that turns a request path into a filesystem path. Handlers never call `std::fs` with raw input.
+
+### 10.4 Embedded frontend
+
+- Plain HTML and vanilla JavaScript; no bundler for the MVP.
+- Pure logic (link rewriting, slug function, URL state, event handling) lives in `frontend/lib.js` so it is unit-tested with `node --test` without a browser.
+- Vendored libraries (§12.6): `markdown-it` (`html: false`, tables), `markdown-it-task-lists`, `mermaid` (a single minified build whose file name is pinned), `highlight.js`.
+- Debug builds read assets from disk; release builds embed them.
+
+### 10.5 Suggested layout
+
+```text
+docs-browser/
+├── Cargo.toml / Cargo.lock
+├── Makefile                  # help, build, run, test, clean (as in claude-code-stats)
+├── src/
+│   ├── main.rs               # clap args, startup, exit codes, signals
+│   ├── server.rs             # axum routes, headers, Host/Origin, SSE
+│   ├── resolve.rs            # the resolver
+│   ├── tree.rs               # scanner, visibility, aliases
+│   └── watch.rs              # notify, debounce, classify, state task
+├── frontend/
+│   ├── index.html  app.js  lib.js  style.css
+│   └── vendor/               # pinned JS, VERSIONS, CHECKSUMS
+├── tests/
+│   ├── make-fixtures.sh      # builds the fixture tree (§13.0)
+│   └── ...                   # Rust unit and integration tests, node tests
+├── docs/spikes/              # one file per spike task (T-0.x)
+└── PRD.md
+```
+
+### 10.6 Release and rollback
+
+- Ships as a git tag; users install with `cargo install --git <repo> --tag vX.Y.Z`.
+- There is no server-side state and no migration.
+- **Rollback trigger:** any failure in the smoke subset (AC-01, AC-07a, AC-20, AC-21, AC-25) run against the tagged build. **Rollback** is installing the previous tag.
+- Prebuilt cross-platform binaries are future work (§14).
+
+## 11. Basic API
+
+All endpoints accept `GET` and `HEAD`. Any other method returns **405**.
+
+### Get file tree
+
+```http
+GET /api/tree
+```
+
+```json
+[
+  {
+    "name": "docs",
+    "type": "directory",
+    "children": [
+      { "name": "architecture.md", "type": "file", "path": "docs/architecture.md" }
+    ]
+  }
+]
+```
+
+Truncation (§7.2) is signalled by the response header `X-Tree-Truncated: 1`.
+
+### Read Markdown
+
+```http
+GET /api/file?path=docs/architecture.md
+```
+
+Returns the raw file as `text/plain; charset=utf-8`; the client renders it. Only `.md` and `.markdown` are accepted.
+
+### Serve repository files
+
+```http
+GET /files/docs/example.html
+```
+
+Only whitelisted extensions (§7.1) are served; the `Content-Type` comes from the fixed table in §10.1.
+
+### Deep-link route
+
+```http
+GET /?file=docs/architecture.md
+```
+
+Served by the same HTML shell as `/` and **always HTTP 200**. The table below applies to `/api/*` and `/files/*`, not to the shell. An invalid, missing, hidden or non-whitelisted `file` renders the app with "File not found" in the preview pane. The query string carries the file path and the hash carries the heading anchor, so they never collide.
+
+### Status codes
+
+| Condition | Status | Body |
+|---|---|---|
+| Resolver denies the path (traversal, outside root, not visible, not whitelisted, symlink escape, not found, directory, permission denied, missing `path` parameter) | **404**, never 403, so existence is not revealed | empty |
+| `Host` or `Origin` not allowed (§12.1) | 403 | empty |
+| Method other than GET/HEAD | 405 | empty |
+| `/api/file` on a visible file whose extension is not `md`/`markdown` | 415 | empty |
+| `/api/file` larger than 5 MiB | 413 | empty |
+| More than 32 SSE streams | 503 | empty |
+| Internal error (I/O failure) | 500 | empty; details only in the stderr log |
+
+### Headers
+
+| Response | Headers |
+|---|---|
+| `/files/*` | `Content-Security-Policy: sandbox allow-scripts allow-popups`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache`, `Last-Modified` |
+| `/api/*` | `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` |
+| `/` and embedded assets | the app-shell CSP (§12.5), `Cache-Control: no-cache`, `ETag` |
+| all | **no** `Access-Control-Allow-*` header |
+
+## 12. Security
+
+### 12.1 Network binding, Host and Origin validation
+
+- Default bind is `127.0.0.1`. Other addresses require explicit `--host` and print the warning in §9.2.
+- **Loopback bind:** a request is rejected with 403 unless its `Host` header is exactly one of `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`. Other loopback aliases such as `127.0.0.2` are rejected.
+- **Origin** (every endpoint, both bind modes): if an `Origin` header is present, its host and port must equal the request's `Host` header (same origin); otherwise 403. A missing `Origin` is allowed.
+- **Non-loopback bind:** the `Host` allowlist is disabled, because the server cannot know every name it is reached by; the Origin rule above stays on (D9). Risk R1 applies.
+
+### 12.2 Path resolution (Rust rules)
+
+Every request that names a file (`/api/file`, `/files/*`, deep-link `?file=`) goes through one resolver:
+
+1. At startup, `ROOT = std::fs::canonicalize(directory)`.
+2. **Decoding:** the resolver itself never percent-decodes. It receives the single-decoded string produced by axum's extractors. A literal `%2e%2e` that survives that one decoding is just a file name and will not exist. Task T-0.9 verifies the extractor's behaviour.
+3. Reject if the input contains a NUL byte or a backslash, or if `Path::new(input).components()` contains `ParentDir`, `RootDir` or `Prefix`.
+4. `TARGET = canonicalize(ROOT.join(input))`. If it fails (not found, permission denied), deny.
+5. Accept only if `TARGET.starts_with(&ROOT)`. `Path::starts_with` compares whole components, so a sibling directory that merely shares a name prefix (`docs-evil` next to `docs`) is rejected.
+6. `LISTED = input`, `CANON = TARGET` made relative to `ROOT`. **Both** must be visible (§7.1, case-insensitive). Deny otherwise.
+7. `TARGET` must be a regular file (a directory is denied), and its extension must pass the whitelist for the endpoint (§7.1).
+8. Every denial returns 404 and logs `denied: <reason> <method> <escaped path>` (§9.3).
+
+macOS volumes are usually case-insensitive and normalization-insensitive. Visibility comparisons are case-insensitive on every platform, and both sides of step 5 come from `canonicalize`. T-0.8 records what `canonicalize` returns for case-variant input on macOS.
+
+### 12.3 Symlink policy
+
+- A symlink whose canonical target is inside the root is allowed: listed, served, followed by the scanner. Change events reach it through `aliases` (§8.2).
+- A symlink whose target is outside the root, dangling, or not visible is not listed, not served and never watched.
+- Cycles are cut by the ancestor rule in §10.3.
+
+### 12.4 HTML isolation
+
+Two independent layers:
+
+1. The preview iframe carries `sandbox="allow-scripts allow-popups"` (§6).
+2. `/files/*` responses carry `Content-Security-Policy: sandbox allow-scripts allow-popups`, for **every** whitelisted type (including `.svg`), and therefore also when the URL is opened directly as a top-level page.
+
+Neither layer grants `allow-same-origin`. `/api/*` and `/files/*` send no CORS headers.
+
+### 12.5 App-shell CSP
+
+```text
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+img-src 'self' data: https:; frame-src 'self'; connect-src 'self';
+object-src 'none'; base-uri 'none'
+```
+
+Whether Mermaid needs `'unsafe-inline'` for styles is verified by T-0.4; the policy is tightened if it does not.
+
+### 12.6 Vendored JavaScript
+
+- Exact versions and the pinned Mermaid build file name are recorded in `frontend/vendor/VERSIONS`.
+- `frontend/vendor/CHECKSUMS` holds the SHA-256 of each vendored file; a test recomputes and compares them.
+- Licence files are kept next to each library.
+
+## 13. Acceptance Criteria
+
+Two kinds of checks:
+
+- **UT-nn** are unit or library tests, run with `cargo test` or `node --test`. They need no running server.
+- **AC-nn** are system-level checks against a running binary (`curl`, browser). Each AC names the **milestone that delivers it** in the `M` column. A browser check is a manual assertion with the expected result stated; T-3.4 tries to automate them with headless Chrome.
+
+`BASE` is `http://127.0.0.1:4100`, started with `docs-browser tests/fixtures/site --port 4100` unless stated.
+
+### 13.0 Fixtures
+
+`tests/make-fixtures.sh` creates `tests/fixtures/site/` (symlinks, `.git` and invalid bytes cannot be committed reliably):
+
+```text
+site/
+├── README.md              # heading, GFM table, 2 task items, link to docs/architecture.md
+├── notes.txt              # visible, not whitelisted
+├── .env                   # SECRET=1
+├── .git/config
+├── .hidden/note.md        # whitelisted file under a dot folder
+├── node_modules/pkg/index.md
+├── loop/self -> ..        # cycle
+├── link-in  -> docs       # in-root symlink
+├── link-out -> /etc       # outside root
+├── evil     -> ../site-evil   # outside root, name shares the root's prefix
+├── public   -> .git       # symlink to an ignored folder
+├── docs/
+│   ├── architecture.md    # one valid mermaid block, one relative image
+│   ├── bad-mermaid.md     # one invalid mermaid block plus a heading
+│   ├── links.md           # [x](javascript:alert(1)), [ok](./api.md), [out](../../outside.md), [t](../notes.txt)
+│   ├── long.md            # 200 lines, heading "Bottom" at the end
+│   ├── big.md             # 6 MiB
+│   ├── utf8-bad.md        # contains invalid UTF-8 bytes
+│   ├── api.md
+│   ├── UPPER.MD           # uppercase extension
+│   ├── dir.md/            # a directory named like a Markdown file
+│   ├── 中文 筆記.md        # CJK name with a space
+│   ├── subdir/rel.md      # image ![](../diagram.svg)
+│   ├── flow.html          # relative css/js/img; its script reports to the parent via postMessage:
+│   │                      #   {ran, parentAccess:'blocked'|'LEAK', apiFetch:'blocked'|'LEAK'}
+│   ├── style.css  app.js  diagram.svg
+../site-evil/secret.md
+```
+
+### 13.1 Functional
+
+| ID | M | Requirement | Verification | Expected |
+|---|---|---|---|---|
+| AC-01 | M2 | §9 start | Start; `curl -s -o /dev/null -w '%{http_code}' $BASE/` | `200` within 2 s; stderr's first line starts `Serving ` and contains the canonical root and `http://127.0.0.1:4100` |
+| AC-02 | M2 | §7 tree | `curl -s $BASE/api/tree` | Contains `README.md`, `docs/architecture.md`, `docs/中文 筆記.md`, `docs/flow.html`, `.hidden` absent; no `.env`, `.git`, `node_modules`, `notes.txt`, `link-out`, `evil`, `public`, `loop/self`; `link-in/architecture.md` present; directories before files; folders without supported files absent |
+| AC-03a | M2 | §11 Markdown API | `curl -si "$BASE/api/file?path=README.md"` | `200`, `text/plain; charset=utf-8`, body equals the file |
+| AC-03b | M3 | §6 Markdown | Browser `/?file=README.md` | 1 `<table>` and 2 checkbox inputs |
+| AC-04 | M3 | §6 Mermaid | Browser `/?file=docs/architecture.md` | `document.querySelectorAll('.mermaid svg').length === 1` |
+| AC-05 | M3 | §6 Mermaid error | Browser `/?file=docs/bad-mermaid.md` | Error box containing the source is visible; the heading is still rendered |
+| AC-06 | M3 | §6 HTML | Browser `/?file=docs/flow.html` | One iframe with `sandbox` exactly `allow-scripts allow-popups`; report has `ran: true`, `parentAccess: 'blocked'`, `apiFetch: 'blocked'`; `h1` is red (CSS loaded) |
+| AC-07a | M2 | §12.4 header | `curl -sI $BASE/files/docs/flow.html` | `content-security-policy: sandbox allow-scripts allow-popups` present |
+| AC-07b | M3 | §12.4 top-level | Open `$BASE/files/docs/flow.html` directly in a tab | Report shows `apiFetch: 'blocked'` and `parentAccess` is not `LEAK` |
+| AC-08 | M2 | §11 assets | `curl -sI` each of `/files/docs/style.css`, `app.js`, `diagram.svg` | `200`; types `text/css`, `text/javascript`, `image/svg+xml`; each has `x-content-type-options: nosniff` |
+| AC-09 | M3 | §6 links | In `/?file=README.md`, click "architecture" | URL becomes `/?file=docs/architecture.md`; a `window.__marker` set before the click is still defined |
+| AC-10 | M3 | §6 link rules | Browser `/?file=docs/links.md` | The `javascript:` link has no `href`; `./api.md` navigates in-app; `../../outside.md` and `../notes.txt` render as plain text |
+| AC-11 | M2 | §6 unsupported | `curl -s -o /dev/null -w '%{http_code}' "$BASE/api/file?path=notes.txt"` | `415` |
+| AC-12a | M2 | §6 size | `curl -s -o /dev/null -w '%{http_code}' "$BASE/api/file?path=docs/big.md"` | `413` |
+| AC-12b | M3 | §6 size UI | Browser `/?file=docs/big.md` | Shows "File too large" |
+| AC-13a | M2 | §5 encoding | `curl -s -o /dev/null -w '%{http_code}' "$BASE/api/file?path=docs/%E4%B8%AD%E6%96%87%20%E7%AD%86%E8%A8%98.md"` | `200` |
+| AC-13b | M3 | §5 encoding UI | Browser `/?file=docs/%E4%B8%AD%E6%96%87%20%E7%AD%86%E8%A8%98.md` | Page renders; the file is highlighted in the tree |
+| AC-14a | M2 | §7.2 cap header | Generate 60,000 `.md` files in a temp root; `curl -sI $BASE/api/tree` | `x-tree-truncated: 1` |
+| AC-14b | M3 | §7.2 cap UI | Same root in the browser | Shows "Tree truncated" |
+| AC-15 | M3 | §6 UTF-8 | Browser `/?file=docs/utf8-bad.md` | Page renders with the banner "File contained invalid UTF-8" |
+| AC-16 | M3 | §6 slugs | `node --test frontend/` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
+| AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
+
+### 13.2 Security
+
+| ID | M | Requirement | Verification | Expected |
+|---|---|---|---|---|
+| AC-20 | M2 | §12.2 traversal | `curl -s -o /dev/null -w '%{http_code}' --path-as-is` for `/files/../../etc/hosts`, `/files/%2e%2e/%2e%2e/etc/hosts`, `/files/%252e%252e/etc/hosts`; and `/api/file?path=../../etc/hosts`, `path=/etc/hosts`, `path=docs%5C..%5C..%5Cetc%5Chosts`, `path=README.md%00` | All `404`; no body contains `localhost` |
+| AC-21 | M2 | §12.3 symlink out | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/link-out/hosts` | `404` |
+| AC-22 | M2 | §12.3 symlink in | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/link-in/architecture.md` | `200` |
+| AC-23 | M2 | §12.2 prefix | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/evil/secret.md` | `404` |
+| AC-24 | M2 | §10.3 cycle | `time curl -s $BASE/api/tree` | ≤ 2 s; finite; no `loop` entry |
+| AC-25 | M2 | §7.1 hidden | Default, then `--include-hidden`: `/files/.hidden/note.md`, `/files/.env`, `/files/.git/config`, `/files/node_modules/pkg/index.md` | Default: all `404`. With `--include-hidden`: `.hidden/note.md` → `200`; `.env`, `.git/config`, `node_modules/...` still `404` |
+| AC-26a | M2 | §12.1 Host/Origin | `curl -s -o /dev/null -w '%{http_code}'` on `$BASE/api/tree` with: `-H 'Host: evil.example:4100'`; `-H 'Host: 127.0.0.2:4100'`; `-H 'Origin: http://evil.example'`; no extra headers | `403`; `403`; `403`; `200` |
+| AC-26b | M4 | §12.1 events | `curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' $BASE/api/events` | `403` |
+| AC-26c | M5 | §12.1 non-loopback | Start with `--host 0.0.0.0`; `curl -H 'Host: anything:4101'` (no Origin) then `curl -H 'Host: a:4101' -H 'Origin: http://b:4101'` | `200`; `403` |
+| AC-27 | M5 | §9.2 warning | `docs-browser tests/fixtures/site --host 0.0.0.0 --port 4101` | stderr contains `WARNING` and `exposes`; listens on `0.0.0.0:4101`; process keeps running |
+| AC-28 | M2 | §12.1 default bind | `lsof -nP -iTCP:4100 -sTCP:LISTEN` | `127.0.0.1:4100` only |
+| AC-29 | M2 | §11 methods | `curl -s -o /dev/null -w '%{http_code}' -X POST $BASE/api/file`; `-X PUT $BASE/files/x` | `405`; `405` |
+| AC-30 | M2 | §11 CORS | `curl -sI -H 'Origin: http://localhost:9' $BASE/files/docs/style.css \| grep -ic access-control` | `0` |
+| AC-31 | M2 | §12.5 CSP | `curl -sI $BASE/ \| grep -i content-security-policy` | Contains `default-src 'self'` and `object-src 'none'` |
+| AC-32 | M0 | §12.6 vendor | `make test` runs the checksum test; then flip one byte of a vendored file | Passes; fails after the edit |
+| AC-33 | M2 | §7.1 case | `/files/Node_Modules/pkg/index.md`, `/files/.GIT/config` (default and `--include-hidden`); `/files/docs/UPPER.MD` | `404`; `404`; `200` |
+| AC-34 | M2 | §7.1 whitelist | `/files/notes.txt`, `/files/.env` (both modes), `/files/docs/flow.html` | `404`; `404`; `200` |
+| AC-35 | M2 | §12.2 file kind | `/files/docs`, `/api/file?path=docs/dir.md`, `/api/file` (no parameter) | `404` for all three |
+| AC-36 | M2 | §7.1 both paths | `/files/public/config` | `404`; `public` absent from the tree |
+| AC-37 | M5 | §9.3 log safety | `curl -s "$BASE/files/%0d%0aX"`; inspect stderr | The `denied:` line is one line with the control characters escaped |
+
+### 13.3 Deep links and live reload
+
+| ID | M | Requirement | Verification | Expected |
+|---|---|---|---|---|
+| AC-40 | M3 | §5 deep link | Fresh load of `/?file=docs/architecture.md`; reload; Back/Forward | File shown; `docs` expanded and file highlighted; reload keeps state; Back/Forward move between viewed files |
+| AC-41 | M3 | §11 invalid | `/?file=does/not/exist.md`, `/?file=../../etc/hosts`, `/?file=.env` | `curl` status `200` for the shell; page shows "File not found" |
+| AC-42 | M3 | §5 anchor | `/?file=docs/long.md#bottom` | The "Bottom" heading is in the viewport |
+| AC-43 | M4 | §8.4 Markdown | Open `README.md`, append a line | The line appears within 2 s with no navigation; scroll position kept |
+| AC-44 | M4 | §8.4 HTML | Open `docs/flow.html`, `touch` it | The iframe fires a new `load` event within 2 s |
+| AC-45 | M4 | §8.4 removed | Delete the open file; then recreate it | "File no longer exists" with URL unchanged; the preview restores within 2 s of recreation |
+| AC-46 | M4 | §8.2 tree | Create `docs/new.md`; later delete it | Appears in the sidebar within 2 s, then disappears; expanded folders stay expanded |
+| AC-47 | M4 | §8.2 debounce | Write one file 50 times within 1 s | At most 5 re-renders in a 2 s window; the final content is shown |
+| AC-48 | M4 | §8.1 ignored | `curl -N $BASE/api/events` while modifying `node_modules/pkg/index.md` | No event within 3 s |
+| AC-50 | M4 | §8.3 shutdown | Connect an SSE client, send SIGINT | Client receives `bye`; process exits `0` within 2 s |
+| AC-51 | M4 | §8.3 keep-alive | `curl -N $BASE/api/events` for 16 s | At least one `:` comment line arrives |
+| AC-52 | M4 | §8.5 reconnect | Open a file in the browser, stop the server, restart it on the same port | Banner "Server unreachable, retrying" appears, then clears; the tree and the file are re-fetched without a manual reload |
+| AC-53 | M4 | §8.2 aliases | Open `/?file=link-in/architecture.md`; edit `docs/architecture.md` | The view re-renders within 2 s |
+| AC-54 | M4 | §8.4 asset reload | Open `docs/flow.html`; edit `docs/style.css` | The iframe reloads within 2 s |
+| AC-55 | M4 | §8.3 order | Loop 100 times: create a file, wait for the `tree` event, immediately `curl /api/tree` | The new file is present in 100 of 100 responses |
+| AC-56 | M4 | §8.3 SSE cap | Open 33 SSE connections | The 33rd gets `503` |
+
+### 13.4 CLI
+
+| ID | M | Requirement | Verification | Expected |
+|---|---|---|---|---|
+| AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser README.md; echo $?` | stderr `error: directory not found: ...` / `not a directory`; exit `2` for both |
+| AC-61 | M5 | §9.1 port busy | Start two instances on port 4100 | Second prints `error: cannot bind 127.0.0.1:4100: ...`; exit `1` |
+| AC-62 | M5 | §9.1 `--port 0` | `docs-browser tests/fixtures/site --port 0` | Startup line shows a non-zero port that answers `200` |
+| AC-63 | M5 | §9.1 `--open` | Run with `--open` (manual) | Default browser opens `http://127.0.0.1:4100/` |
+| AC-64 | M5 | §9 help/version | `docs-browser --help`; `--version` | Exit `0`; help lists `--port`, `--host`, `--open`, `--include-hidden`, `--verbose` |
+| AC-65 | M5 | §9.1 zero config | Run AC-01 with `HOME=$(mktemp -d)` and an empty cwd | Passes |
+| AC-66 | M5 | §9.3 logging | Run AC-20's requests with and without `--verbose` | `denied:` lines in both; per-request lines only with `--verbose` |
+| AC-67 | M5 | §3.1 targets | Benchmark (T-5.4) on the §3.1 workload | Measured values recorded in the repository; misses listed |
+| AC-68 | M5 | §9.1 wildcard open | `--host 0.0.0.0 --open` (manual) | Browser opens `http://127.0.0.1:<port>/` |
+| AC-69 | M5 | §9.1 bind errors | `docs-browser . --port 80` as an unprivileged user | `error: cannot bind ...`; exit `1` |
+
+### 13.5 Unit tests
+
+| ID | M | Test | Expected |
+|---|---|---|---|
+| UT-01 | M1 | Resolver with traversal inputs: `..`, absolute, backslash, NUL, `%2e%2e` literal | `Denied` for each; a literal `%2e%2e` is only "not found" |
+| UT-02 | M1 | Sibling prefix `docs-evil` vs `docs` | `Denied` |
+| UT-03 | M1 | Symlink inside root, outside root, dangling | Allowed, `Denied`, `Denied` |
+| UT-04 | M1 | `visible()` with dot names, ignore-list names in other cases (`Node_Modules`, `.GIT`), `--include-hidden` on and off | Case-insensitive; ignore list excluded in both modes |
+| UT-05 | M1 | Both-path visibility: `public -> .git` | `Denied` |
+| UT-06 | M1 | Whitelist and extension case (`UPPER.MD`, `.PNG`, `.env`, no extension) | Matches §7.1 |
+| UT-07 | M1 | Directory target, permission denied, non-UTF-8 name | `Denied` |
+| UT-08 | M1 | Scanner: ancestor cycle (`loop/self -> ..`) omitted; depth cap 64 | Terminates; entry omitted |
+| UT-09 | M1 | Scanner: cap of 50,000 entries | `truncated = true` |
+| UT-10 | M1 | `aliases`: `link-in/x` and `docs/x` share one canonical path | Both listed paths present |
+| UT-11 | M1 | Folders with no supported file are pruned | Pruned |
+| UT-12 | M4 | Classifier table in §8.2 (in/out of snapshot × exists/missing) | `changed`, `removed`, `tree`, ignored as specified |
+| UT-13 | M4 | Broadcast channel capacity 1, send 100 events | The slow subscriber receives exactly one `resync` |
+| UT-14 | M4 | Watcher init failure injected | Server keeps running; `unavailable` event sent |
+| UT-15 | M4 | Rebuild coalescing: 10 events during a rebuild | Exactly one extra rebuild; never two in flight |
+| UT-16 | M4 | Rebuild failure | Previous tree kept; no `tree` event; next event retries |
+
+### 13.6 Coverage matrix
+
+| Requirement | Checked by |
+|---|---|
+| §3 goals 1 to 8 | AC-01, AC-02, AC-03b, AC-04, AC-06, AC-43, AC-40 |
+| §6 Markdown, links, images, UTF-8, slugs | AC-03a/b, AC-09, AC-10, AC-15, AC-16, AC-17 |
+| §6 Mermaid and error box | AC-04, AC-05 |
+| §6, §12.4 HTML isolation | AC-06, AC-07a/b |
+| §7 tree, caps | AC-02, AC-14a/b, UT-08, UT-09, UT-11 |
+| §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
+| §8 live reload | AC-43 to AC-48, AC-50 to AC-55, UT-12 to UT-16 |
+| §8.5 failures | AC-52, UT-14 |
+| §9 CLI | AC-60 to AC-69, AC-01, AC-27 |
+| §9.3 logging | AC-37, AC-66 |
+| §11 API shape, headers, status | AC-03a, AC-08, AC-11, AC-12a, AC-29, AC-30, AC-35 |
+| §12.1 Host/Origin | AC-26a/b/c |
+| §12.2, §12.3 resolver and symlinks | AC-20 to AC-24, AC-35, UT-01 to UT-07, UT-10 |
+| §12.5, §12.6 CSP, vendoring | AC-31, AC-32 |
+| §3.1 targets | AC-67 |
+
+## 14. Future Features
+
+- Windows support (UNC and `\\?\` canonical prefixes, case rules)
+- Opt-in flag to relax HTML isolation (e.g. CORS on `/files/*`) for pages that need `fetch()` of local files
+- Opt-in for Markdown raw HTML, with sanitization
+- Override for the ignore list
+- Polling fallback when the OS watcher is unavailable
+- Browser automation for all browser checks in §13
+- Full-text search, filename search
+- Table of contents
+- Dark mode
+- Copy code button
+- Image / PDF preview
+- JSON / YAML preview
+- Remember expanded folders across sessions
+- Keyboard navigation
+- Open file in VS Code
+- Config file such as `.docs-browser.json`
+- Prebuilt cross-platform release binaries
+
+## 15. Decisions and Open Questions
+
+### Decisions
+
+| ID | Decision |
+|---|---|
+| D1 | Hidden (dot-prefixed) and ignored paths are not readable by default. `--include-hidden` opens dot-prefixed paths only; `.git`, `node_modules`, `dist`, `build`, `.cache` are always excluded |
+| D2 | A non-loopback `--host` produces a warning only; it is not refused |
+| D3 | Markdown raw HTML is off, with no opt-in flag in the MVP |
+| D4 | HTML previews cannot `fetch()` local files (opaque origin); no opt-in flag in the MVP |
+| D5 | Markdown links that resolve outside the root, or to non-visible or non-whitelisted files, render as plain text |
+| D6 | A sub-hash on an HTML deep link is ignored |
+| D7 | `/files/*` serves only the extension whitelist in §7.1; everything else is 404 |
+| D8 | The residual exposure of `--include-hidden` (whitelisted files in dot folders) is accepted |
+| D9 | The Origin check stays on in non-loopback mode, as a same-origin comparison with `Host` |
+| D10 | In-root symlinks are followed and listed; the watcher covers them through the root watch, and events are delivered per listed path via `aliases` |
+
+### Open questions
+
+1. Is the crate name `docs-browser` available on crates.io? Not checked. `cargo install --git` is the install path until it is.
+2. When, if ever, should Windows be supported?
+
+## 16. Milestones and Tasks
+
+Each task lists the acceptance criteria (AC) and unit tests (UT) it delivers. **Every AC and UT belongs to exactly one milestone**, the one in its `M` column in §13. After each milestone there is a **checkpoint task**: run `/reviewer:result` on that milestone's diff; do not start the next milestone while any **CRITICAL or HIGH** finding remains.
+
+A spike task is done when `docs/spikes/<task>.md` exists and answers every question listed for that task.
+
+### M0 — Validate assumptions, scaffolding
+
+| Task | Description | Depends | Done when |
+|---|---|---|---|
+| T-0.1 | Scaffold the crate; choose and pin crate versions; compile a hello-world axum server with a wildcard route and an SSE route | none | `cargo run` serves a wildcard path and a stream; versions recorded in `Cargo.toml` |
+| T-0.6 | `tests/make-fixtures.sh` builds the §13.0 tree | none | `ls -laR tests/fixtures/site` shows the listed symlinks, `.git`, `big.md`, `utf8-bad.md` |
+| T-0.7 | Makefile with `help`, `build`, `run`, `test`, `clean` | T-0.1 | `make help` lists the targets; `make test` runs `cargo test` |
+| T-0.2 | Vendor `markdown-it`, `markdown-it-task-lists`, `mermaid`, `highlight.js`; write `VERSIONS` and `CHECKSUMS`; checksum test | T-0.7 | AC-32 |
+| T-0.3 | Spike on `notify` + `notify-debouncer-mini` on macOS and Linux. Questions: does a recursive watch follow symlinks? Can ignored directories be excluded? Is removal distinguishable? What does overflow look like? What is the inotify watch limit failure? | T-0.1 | Spike note answers all five |
+| T-0.4 | Check that Mermaid renders under the planned CSP | T-0.2 | Spike note states the final `style-src` |
+| T-0.5 | `cargo package --list` and `cargo publish --dry-run` | T-0.2 | Package list contains `frontend/` |
+| T-0.8 | macOS spike: what does `canonicalize` return for `/files/Node_Modules/...` and `.GIT/config`; is the volume case-insensitive; Unicode normalization of the CJK fixture | T-0.6 | Spike note answers all three |
+| T-0.9 | axum extractor spike: what do `Path` and `Query` return for `%2e%2e`, `%252e`, `%00`, `%5C`? | T-0.1 | Spike note lists the decoded strings; confirms the resolver never needs to decode |
+| **CP-0** | Checkpoint review | all above | No CRITICAL or HIGH |
+
+### M1 — Resolver and scanner (library level)
+
+| Task | Description | Depends | Done when |
+|---|---|---|---|
+| T-1.1 | `resolve.rs`, `visible()`, whitelist | T-0.8, T-0.9 | UT-01 to UT-07 |
+| T-1.2 | `tree.rs`: scanner, ancestor cycle rule, caps, aliases, pruning | T-1.1 | UT-08 to UT-11 |
+| **CP-1** | Checkpoint review | T-1.1, T-1.2 | No CRITICAL or HIGH |
+
+### M2 — Server and security (HTTP level)
+
+| Task | Description | Depends | Done when |
+|---|---|---|---|
+| T-2.0 | `main.rs` minimal: `directory`, `--port`, `--host`, startup line, `AppState`, initial tree build | T-1.2 | AC-01, AC-28 |
+| T-2.1 | Routes `/api/tree`, `/api/file`, `/files/*` with the §11 status codes | T-2.0 | AC-02, AC-03a, AC-08, AC-11, AC-12a, AC-13a, AC-14a, AC-24, AC-29, AC-35 |
+| T-2.2 | Headers: `/files/*` sandbox CSP, no CORS, caching, app-shell CSP | T-2.1 | AC-07a, AC-30, AC-31 |
+| T-2.3 | `Host` and `Origin` validation (loopback mode) | T-2.1 | AC-26a |
+| T-2.4 | Security behaviours through HTTP: traversal, symlinks, hidden, whitelist, case | T-2.1 | AC-20, AC-21, AC-22, AC-23, AC-25, AC-33, AC-34, AC-36 |
+| **CP-2** | Checkpoint review | T-2.0 to T-2.4 | No CRITICAL or HIGH |
+
+### M3 — Frontend
+
+| Task | Description | Depends | Done when |
+|---|---|---|---|
+| T-3.1 | `lib.js` (slug, link rewriting, URL state) with `node --test` | T-0.2 | AC-16 |
+| T-3.2a | Shell, tree, Markdown rendering, link and image rules, UTF-8 banner | T-2.2, T-3.1 | AC-03b, AC-09, AC-10, AC-13b, AC-15, AC-17 |
+| T-3.2b | Mermaid with error box | T-3.2a, T-0.4 | AC-04, AC-05 |
+| T-3.2c | HTML iframe preview and the top-level check | T-3.2a | AC-06, AC-07b |
+| T-3.3 | Deep links, history, anchors, not-found, size and truncation states | T-3.2a | AC-12b, AC-14b, AC-40, AC-41, AC-42 |
+| T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
+| **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
+
+### M4 — Live reload
+
+| Task | Description | Depends | Done when |
+|---|---|---|---|
+| T-4.1 | `watch.rs`: watch scope, debounce | T-0.3, T-2.0 | AC-47, AC-48 |
+| T-4.2 | State task: snapshot, classifier, aliases, rebuild-then-broadcast, coalescing, failure handling | T-4.1, T-1.2 | UT-12, UT-15, UT-16, AC-46, AC-53, AC-55 |
+| T-4.3 | `/api/events`: keep-alive, bounded channel, `resync`, `unavailable`, `bye`, 32-stream cap, graceful shutdown, events Origin check | T-4.2 | UT-13, UT-14, AC-26b, AC-50, AC-51, AC-56 |
+| T-4.4 | Client event handling, restore, failure banners, asset reload | T-4.3, T-3.3 | AC-43, AC-44, AC-45, AC-52, AC-54 |
+| **CP-4** | Checkpoint review | T-4.1 to T-4.4 | No CRITICAL or HIGH |
+
+### M5 — CLI, hardening, release
+
+| Task | Description | Depends | Done when |
+|---|---|---|---|
+| T-5.1 | Full CLI: flags, exit codes, host warning, `--open`, verbose, log escaping, non-loopback Origin rule | T-4.3 | AC-26c, AC-27, AC-37, AC-60 to AC-66, AC-68, AC-69 |
+| T-5.2 | README | T-5.1 | `make help` documented; install path stated |
+| T-5.3 | **MVP exit gate:** run the whole §13 suite on macOS **and** on Linux | T-5.1 | Every AC and UT passes on both. A criterion may be waived only by an explicit, dated note in this PRD, approved by its owner |
+| T-5.4 | Benchmark on the §3.1 workload | T-5.1 | AC-67 |
+| T-5.5 | Tag `v0.1.0`, then a no-op `v0.1.1`; install each; roll back by installing `v0.1.0` over `v0.1.1`; run the smoke subset after each | T-5.3 | Smoke subset passes on both tags |
+| **CP-5** | Final result review | T-5.1 to T-5.5 | No CRITICAL or HIGH |

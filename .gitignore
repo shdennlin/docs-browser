@@ -1,0 +1,5 @@
+/target
+/tests/fixtures/
+/.claude/reviewer/
+node_modules/
+.DS_Store
