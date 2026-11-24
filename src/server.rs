@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, Bytes};
 use axum::extract::rejection::{PathRejection, QueryRejection};
@@ -25,6 +26,21 @@ use tokio::sync::{broadcast, watch, OwnedSemaphorePermit, Semaphore};
 use crate::resolve::{Denied, Endpoint, Resolver};
 use crate::tree::{scan, TreeState};
 use crate::watch::LiveEvent;
+
+/// The URL `--open` should open for a bound address. A wildcard address is not browsable, so the
+/// loopback address of the same family is used instead (PRD 9.1).
+pub fn browse_url(local: SocketAddr) -> String {
+    let ip = if local.ip().is_unspecified() {
+        if local.is_ipv6() {
+            std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        } else {
+            std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        }
+    } else {
+        local.ip()
+    };
+    format!("http://{}/", SocketAddr::new(ip, local.port()))
+}
 
 /// Concurrent SSE streams allowed (PRD 8.3).
 pub const MAX_SSE_STREAMS: usize = 32;
@@ -57,6 +73,8 @@ pub struct AppState {
     pub unavailable: RwLock<Option<String>>,
     /// Flips to true on shutdown so open SSE streams can say `bye` and end.
     pub shutdown: watch::Sender<bool>,
+    /// `--verbose`: log every request (PRD 9.3).
+    pub verbose: AtomicBool,
     /// Allowed `Host` header values (lower case) when bound to a loopback address; `None` otherwise.
     allowed_hosts: Option<Vec<String>>,
 }
@@ -82,6 +100,7 @@ impl AppState {
             sse_slots: Arc::new(Semaphore::new(MAX_SSE_STREAMS)),
             unavailable: RwLock::new(None),
             shutdown: watch::channel(false).0,
+            verbose: AtomicBool::new(false),
             allowed_hosts,
         })
     }
@@ -166,6 +185,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn_with_state(state.clone(), guard))
         // Outermost: every response, including the guard's 403, carries the security headers.
         .layer(middleware::from_fn(stamp_headers))
+        // Outermost of all, so rejected requests are logged too.
+        .layer(middleware::from_fn_with_state(state.clone(), request_log))
         .with_state(state)
 }
 
@@ -193,6 +214,25 @@ fn denied_status(d: &Denied) -> StatusCode {
         Denied::UnsupportedType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
         _ => StatusCode::NOT_FOUND,
     }
+}
+
+/// `--verbose`: one line per request, `METHOD path status duration` (PRD 9.3).
+async fn request_log(State(state): State<Arc<AppState>>, req: Request, next: Next) -> Response {
+    if !state.verbose.load(Ordering::Relaxed) {
+        return next.run(req).await;
+    }
+    let method = req.method().clone();
+    let target = req.uri().to_string();
+    let started = Instant::now();
+    let resp = next.run(req).await;
+    eprintln!(
+        "{} {} {} {}ms",
+        method,
+        escape_log(&target),
+        resp.status().as_u16(),
+        started.elapsed().as_millis()
+    );
+    resp
 }
 
 // ------------------------------------------------------------------ guard: Host and Origin (PRD 12.1)
@@ -484,6 +524,16 @@ pub fn http_date(t: SystemTime) -> String {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn browse_url_never_uses_a_wildcard_address() {
+        let u = |s: &str| browse_url(s.parse().unwrap());
+        assert_eq!(u("127.0.0.1:3000"), "http://127.0.0.1:3000/");
+        assert_eq!(u("0.0.0.0:4112"), "http://127.0.0.1:4112/");
+        assert_eq!(u("[::]:4112"), "http://[::1]:4112/");
+        assert_eq!(u("[::1]:80"), "http://[::1]:80/");
+        assert_eq!(u("192.168.1.5:9000"), "http://192.168.1.5:9000/");
+    }
 
     #[test]
     fn http_date_formats_rfc7231() {

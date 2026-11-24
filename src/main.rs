@@ -1,5 +1,6 @@
-//! docs-browser entry point. T-2.0 provides the minimal CLI; the full CLI arrives in milestone M5.
+//! docs-browser entry point (PRD 9): flags, exit codes, startup messages, signals.
 
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -17,35 +18,91 @@ struct Cli {
     /// TCP port (0 asks the OS for a free port)
     #[arg(long, default_value_t = 3000)]
     port: u16,
-    /// Address to bind
-    #[arg(long, default_value = "127.0.0.1")]
-    host: String,
+    /// Address to bind (an IP address, or `localhost`)
+    #[arg(long, default_value = "127.0.0.1", value_parser = parse_host)]
+    host: IpAddr,
+    /// Open the page in the default browser
+    #[arg(long)]
+    open: bool,
     /// Make dot-prefixed files and folders visible and readable
     #[arg(long)]
     include_hidden: bool,
+    /// Log every request to stderr
+    #[arg(long, short = 'v')]
+    verbose: bool,
+}
+
+fn parse_host(s: &str) -> Result<IpAddr, String> {
+    if s.eq_ignore_ascii_case("localhost") {
+        return Ok(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    }
+    s.parse().map_err(|_| format!("'{s}' is not an IP address"))
+}
+
+/// A startup failure: the message goes to stderr, `code` is the exit code (PRD 9.1).
+struct Failure {
+    code: i32,
+    message: String,
 }
 
 #[tokio::main]
 async fn main() {
-    if let Err(e) = run().await {
-        eprintln!("error: {e}");
-        std::process::exit(1);
-    }
+    let code = match run().await {
+        Ok(()) => 0,
+        Err(f) => {
+            eprintln!("error: {}", f.message);
+            f.code
+        }
+    };
+    std::process::exit(code);
 }
 
-async fn run() -> anyhow::Result<()> {
+async fn run() -> Result<(), Failure> {
+    // clap reports usage errors (a bad --port or --host) itself and exits with code 2.
     let cli = Cli::parse();
-    let resolver = Resolver::new(&cli.directory, cli.include_hidden)
-        .map_err(|e| anyhow::anyhow!("directory not usable: {}: {e}", cli.directory.display()))?;
+
+    match std::fs::metadata(&cli.directory) {
+        Ok(m) if m.is_dir() => {}
+        Ok(_) => {
+            return Err(Failure { code: 2, message: format!("not a directory: {}", cli.directory.display()) })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Failure { code: 2, message: format!("directory not found: {}", cli.directory.display()) })
+        }
+        Err(e) => {
+            return Err(Failure { code: 2, message: format!("cannot read {}: {e}", cli.directory.display()) })
+        }
+    }
+    let resolver = Resolver::new(&cli.directory, cli.include_hidden).map_err(|e| Failure {
+        code: 2,
+        message: format!("cannot use {}: {e}", cli.directory.display()),
+    })?;
     let root = resolver.root().to_path_buf();
 
-    let listener = tokio::net::TcpListener::bind((cli.host.as_str(), cli.port))
+    let wanted = SocketAddr::new(cli.host, cli.port);
+    let listener = tokio::net::TcpListener::bind(wanted)
         .await
-        .map_err(|e| anyhow::anyhow!("cannot bind {}:{}: {e}", cli.host, cli.port))?;
-    let local = listener.local_addr()?;
+        .map_err(|e| Failure { code: 1, message: format!("cannot bind {wanted}: {e}") })?;
+    let local = listener.local_addr().map_err(|e| Failure { code: 1, message: e.to_string() })?;
+
+    if !local.ip().is_loopback() {
+        eprintln!(
+            "WARNING: binding to {} exposes every visible file under {} to your network.",
+            local.ip(),
+            root.display()
+        );
+    }
 
     let state = AppState::new(resolver, local);
+    state.verbose.store(cli.verbose, std::sync::atomic::Ordering::Relaxed);
     eprintln!("Serving {} at http://{}", root.display(), local);
+
+    if cli.open {
+        let url = docs_browser::server::browse_url(local);
+        if let Err(e) = open::that(&url) {
+            eprintln!("warning: could not open a browser for {url}: {e}");
+        }
+    }
 
     // Live reload: if the OS watcher cannot start, the server keeps serving (PRD 8.5).
     let include_hidden = state.resolver.include_hidden();
@@ -67,7 +124,8 @@ async fn run() -> anyhow::Result<()> {
                 std::process::exit(0);
             });
         })
-        .await?;
+        .await
+        .map_err(|e| Failure { code: 1, message: e.to_string() })?;
     Ok(())
 }
 

@@ -15,6 +15,7 @@
 | v1.4.5 (2026-11-24) | CP-3: heading ids are prefixed `user-content-`, slugs come from rendered text, navigation resets scroll and layout, anchor scroll waits for images (6, AC-42) |
 | v1.4.6 (2026-11-24) | M4: `notify-debouncer-mini` replaced by raw `notify` events with an `Access`-event filter and an own quiet-period debounce, after a Linux-only self-triggering rebuild loop (8.1, 8.2, 10.1); AC-48 and AC-57 check that an idle server is silent |
 | v1.4.7 (2026-11-24) | CP-4: deleting a symlink is classified; `resync` on every rescan; late SSE streams see shutdown; invisible paths filtered in the watcher; client reconnects by hand when the browser gives up, connects before the first fetch, cancels a pending re-render on `removed` (8.2, 8.3, 8.5) |
+| v1.4.8 (2026-11-24) | M5: `--open` checks run on macOS only with `DOCS_BROWSER_SUITE_OPEN=1` (the opener cannot be intercepted: the `open` crate calls `/usr/bin/open` by absolute path); the browse URL is a pure function with a unit test (AC-63, AC-68); README added |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -723,12 +724,12 @@ site/
 | AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser README.md; echo $?` | stderr `error: directory not found: ...` / `not a directory`; exit `2` for both |
 | AC-61 | M5 | §9.1 port busy | Start two instances on port 4100 | Second prints `error: cannot bind 127.0.0.1:4100: ...`; exit `1` |
 | AC-62 | M5 | §9.1 `--port 0` | `docs-browser tests/fixtures/site --port 0` | Startup line shows a non-zero port that answers `200` |
-| AC-63 | M5 | §9.1 `--open` | macOS: run with `--open` (manual). Linux container (no desktop): run with `--open` | macOS: default browser opens `http://127.0.0.1:4100/`. Linux: stderr contains `warning:` and the server still answers `200` |
+| AC-63 | M5 | §9.1 `--open` | macOS: run with `--open`; the runner does this only when `DOCS_BROWSER_SUITE_OPEN=1` is set, because it opens a real tab. Linux container (no desktop): run with `--open` | macOS: the OS accepts the request to open `http://127.0.0.1:<port>/` (no `warning:` on stderr) and the server answers `200`. Linux: stderr contains `warning: could not open a browser for http://127.0.0.1:<port>/` and the server still answers `200` |
 | AC-64 | M5 | §9 help/version | `docs-browser --help`; `--version` | Exit `0`; help lists `--port`, `--host`, `--open`, `--include-hidden`, `--verbose` |
 | AC-65 | M5 | §9.1 zero config | Run AC-01 with `HOME=$(mktemp -d)` and an empty cwd | Passes |
 | AC-66 | M5 | §9.3 logging | Run AC-20's requests with and without `--verbose` | `denied:` lines in both; per-request lines only with `--verbose` |
 | AC-67 | M5 | §3.1 targets | Benchmark (T-5.4) on the §3.1 workload | Measured values recorded in the repository; misses listed |
-| AC-68 | M5 | §9.1 wildcard open | macOS: `--host 0.0.0.0 --open` (manual). Linux container: same flags | macOS: browser opens `http://127.0.0.1:<port>/`. Linux: the URL printed for opening is `http://127.0.0.1:<port>/` and a `warning:` is printed because no browser can open |
+| AC-68 | M5 | §9.1 wildcard open | macOS: `--host 0.0.0.0 --open` (same opt-in as AC-63). Linux container: same flags. The URL itself is also covered by the unit test `browse_url_never_uses_a_wildcard_address` | macOS: no `warning:` and the server answers `200`. Linux: the warning names `http://127.0.0.1:<port>/`, never `0.0.0.0` |
 | AC-69 | M5 | §9.1 bind errors | macOS: `docs-browser . --port 80` as an unprivileged user. Linux: the same inside a container started with `--user 1000 --sysctl net.ipv4.ip_unprivileged_port_start=1024` (without the sysctl, Docker allows the bind, measured) | `error: cannot bind ...`; exit `1` |
 
 ### 13.5 Unit tests
