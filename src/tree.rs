@@ -60,6 +60,13 @@ pub fn scan(resolver: &Resolver) -> TreeState {
     scan_with_limits(resolver, MAX_ENTRIES, MAX_DEPTH)
 }
 
+/// Like [`scan`], but fails when the root itself cannot be listed, so that a live rebuild can keep the
+/// previous tree instead of swapping in an empty one (PRD 8.3).
+pub fn try_scan(resolver: &Resolver) -> std::io::Result<TreeState> {
+    fs::read_dir(resolver.root())?;
+    Ok(scan(resolver))
+}
+
 pub fn scan_with_limits(resolver: &Resolver, max_entries: usize, max_depth: usize) -> TreeState {
     let mut scanner = Scanner {
         resolver,

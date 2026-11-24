@@ -1,25 +1,35 @@
 //! HTTP layer (PRD 11 and 12): routes, status codes, headers, Host/Origin validation.
 
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, Bytes};
 use axum::extract::rejection::{PathRejection, QueryRejection};
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{header, HeaderValue, Method, StatusCode, Uri};
 use axum::middleware::{self, Next};
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::get;
 use axum::Router;
-use futures_util::stream;
+use futures_util::{stream, Stream, StreamExt};
 use rust_embed::RustEmbed;
 use tokio::io::AsyncReadExt;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast, watch, OwnedSemaphorePermit, Semaphore};
 
 use crate::resolve::{Denied, Endpoint, Resolver};
 use crate::tree::{scan, TreeState};
+use crate::watch::LiveEvent;
+
+/// Concurrent SSE streams allowed (PRD 8.3).
+pub const MAX_SSE_STREAMS: usize = 32;
+/// Capacity of the live-event broadcast channel.
+pub const EVENT_CAPACITY: usize = 256;
 
 /// `/api/file` refuses files larger than this (PRD 6, 11).
 pub const MAX_MARKDOWN_BYTES: u64 = 5 * 1024 * 1024;
@@ -40,6 +50,13 @@ struct Assets;
 pub struct AppState {
     pub resolver: Resolver,
     pub tree: RwLock<Arc<TreeState>>,
+    /// Live-reload events for `/api/events` (PRD 8.3).
+    pub events: broadcast::Sender<LiveEvent>,
+    pub sse_slots: Arc<Semaphore>,
+    /// Why live reload is off, if it is (PRD 8.5).
+    pub unavailable: RwLock<Option<String>>,
+    /// Flips to true on shutdown so open SSE streams can say `bye` and end.
+    pub shutdown: watch::Sender<bool>,
     /// Allowed `Host` header values (lower case) when bound to a loopback address; `None` otherwise.
     allowed_hosts: Option<Vec<String>>,
 }
@@ -61,15 +78,89 @@ impl AppState {
         Arc::new(AppState {
             resolver,
             tree: RwLock::new(Arc::new(tree)),
+            events: broadcast::channel(EVENT_CAPACITY).0,
+            sse_slots: Arc::new(Semaphore::new(MAX_SSE_STREAMS)),
+            unavailable: RwLock::new(None),
+            shutdown: watch::channel(false).0,
             allowed_hosts,
         })
     }
+
+    /// Broadcasts a live event; having no subscriber is not an error.
+    pub fn send_event(&self, event: LiveEvent) {
+        let _ = self.events.send(event);
+    }
+}
+
+/// The event stream behind `/api/events`. A subscriber that falls behind gets one `resync`; a
+/// shutdown yields `bye` and ends the stream; `permit` (an SSE slot) is held until the stream ends.
+pub fn live_events(
+    rx: broadcast::Receiver<LiveEvent>,
+    shutdown: watch::Receiver<bool>,
+    initial: Option<LiveEvent>,
+    permit: Option<OwnedSemaphorePermit>,
+) -> impl Stream<Item = LiveEvent> {
+    struct Live {
+        rx: broadcast::Receiver<LiveEvent>,
+        shutdown: watch::Receiver<bool>,
+        initial: Option<LiveEvent>,
+        done: bool,
+        _permit: Option<OwnedSemaphorePermit>,
+    }
+    stream::unfold(
+        Live { rx, shutdown, initial, done: false, _permit: permit },
+        |mut st| async move {
+            if st.done {
+                return None;
+            }
+            if let Some(event) = st.initial.take() {
+                return Some((event, st));
+            }
+            if *st.shutdown.borrow() {
+                st.done = true;
+                return Some((LiveEvent::Bye, st));
+            }
+            tokio::select! {
+                received = st.rx.recv() => match received {
+                    Ok(event) => Some((event, st)),
+                    Err(RecvError::Lagged(_)) => Some((LiveEvent::Resync, st)),
+                    Err(RecvError::Closed) => None,
+                },
+                _ = st.shutdown.changed() => {
+                    st.done = true;
+                    Some((LiveEvent::Bye, st))
+                }
+            }
+        },
+    )
+}
+
+async fn api_events(State(state): State<Arc<AppState>>) -> Response {
+    let Ok(permit) = state.sse_slots.clone().try_acquire_owned() else {
+        eprintln!("denied: sse-limit GET /api/events");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let initial = state
+        .unavailable
+        .read()
+        .expect("unavailable lock")
+        .as_ref()
+        .map(|_| LiveEvent::Unavailable);
+    let events = live_events(state.events.subscribe(), state.shutdown.subscribe(), initial, Some(permit))
+        .map(|event| {
+            let json = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+            Ok::<_, Infallible>(SseEvent::default().data(json))
+        });
+    Sse::new(events)
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keepalive"))
+        .into_response()
 }
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/tree", get(api_tree))
         .route("/api/file", get(api_file))
+        .route("/api/events", get(api_events))
         .route("/files/{*path}", get(files))
         .fallback(fallback)
         .layer(middleware::from_fn_with_state(state.clone(), guard))

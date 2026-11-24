@@ -252,7 +252,6 @@ dependencies = [
  "clap",
  "futures-util",
  "notify",
- "notify-debouncer-mini",
  "open",
  "rust-embed",
  "serde",
@@ -573,17 +572,6 @@ dependencies = [
  "walkdir",
  "windows-sys",
  "xxhash-rust",
-]
-
-[[package]]
-name = "notify-debouncer-mini"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce20d2a4f7b6929982f96f746c979fbb7450194350c88694b398aec6b73eae2"
-dependencies = [
- "log",
- "notify",
- "notify-types",
 ]
 
 [[package]]

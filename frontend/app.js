@@ -8,6 +8,7 @@
   var els = { tree: $('#tree'), preview: $('#preview'), banners: $('#banners'), treeBanners: $('#tree-banners') };
 
   var state = {
+    missing: false,
     tree: [],
     treePaths: new Set(),
     truncated: false,
@@ -276,13 +277,19 @@
     });
   }
 
-  async function showFile(path, hash) {
+  // `opts.keepScroll` is used by live reload: the page is re-rendered in place.
+  async function showFile(path, hash, opts) {
+    var keepScroll = !!(opts && opts.keepScroll);
+    var savedScroll = $('#main').scrollTop;
     var token = ++state.token;
     document.body.dataset.state = 'rendering';
     clear(els.banners);
-    // Every navigation starts from the top with the default layout; only an anchor scrolls later.
-    els.preview.classList.remove('wide');
-    $('#main').scrollTop = 0;
+    state.missing = false;
+    if (!keepScroll) {
+      // Every navigation starts from the top with the default layout; only an anchor scrolls later.
+      els.preview.classList.remove('wide');
+      $('#main').scrollTop = 0;
+    }
     state.current = path;
     markSelected();
     if (!path) {
@@ -297,7 +304,10 @@
     } catch (e) {
       if (token === state.token) showState('Could not load the file: ' + (e && e.message ? e.message : e));
     }
-    if (token === state.token) setReady();
+    if (token === state.token) {
+      if (keepScroll) $('#main').scrollTop = savedScroll;
+      setReady();
+    }
   }
 
   function navigate(path, hash) {
@@ -328,6 +338,95 @@
     showFile(loc.file, loc.hash);
   });
 
+  // ------------------------------------------------------------ live reload (PRD 8)
+  var live = { down: false, timer: null, pendingSince: 0 };
+
+  function statusBanner(text) {
+    var el = $('#live-status');
+    el.textContent = text;
+    el.hidden = !text;
+  }
+
+  function reloadCurrent() {
+    if (!state.current) return Promise.resolve();
+    return showFile(state.current, '', { keepScroll: true });
+  }
+
+  // A burst of saves re-renders once: trailing 250 ms debounce, but never wait more than 1 s.
+  function scheduleReload() {
+    var now = Date.now();
+    if (!live.pendingSince) live.pendingSince = now;
+    clearTimeout(live.timer);
+    var wait = Math.min(250, Math.max(0, 1000 - (now - live.pendingSince)));
+    live.timer = setTimeout(function () {
+      live.pendingSince = 0;
+      reloadCurrent();
+    }, wait);
+  }
+
+  function reloadHtml() {
+    var frame = els.preview.querySelector('iframe.html-frame');
+    if (frame) frame.src = frame.src;
+  }
+
+  function resync() {
+    return loadTree().then(reloadCurrent).catch(function () { /* the next event retries */ });
+  }
+
+  function handleLive(ev) {
+    var current = state.current;
+    switch (ev.type) {
+      case 'changed':
+        if (!current) return;
+        if (ev.path === current) {
+          if (L.isHtml(current)) reloadHtml(); else scheduleReload();
+        } else if (L.isHtml(current) && !L.isSupported(ev.path)) {
+          reloadHtml(); // an asset of the open HTML page (CSS, JS, image)
+        }
+        break;
+      case 'removed':
+        if (ev.path === current) {
+          state.missing = true;
+          showState('File no longer exists');
+        }
+        break;
+      case 'tree':
+        loadTree().then(function () {
+          if (state.current && state.missing && state.treePaths.has(state.current)) {
+            state.missing = false;
+            scheduleReload(); // the file is back: restore the preview
+          }
+        }).catch(function () { /* the next event retries */ });
+        break;
+      case 'resync': resync(); break;
+      case 'unavailable': statusBanner('Live reload unavailable'); break;
+      case 'bye': statusBanner('Server stopped'); break;
+      default: break;
+    }
+  }
+
+  function connectLive() {
+    if (!window.EventSource) return;
+    var source = new EventSource('/api/events');
+    source.onopen = function () {
+      if (live.down) {
+        live.down = false;
+        statusBanner('');
+        resync(); // events may have been missed while the connection was down
+      }
+    };
+    source.onmessage = function (m) {
+      var ev;
+      try { ev = JSON.parse(m.data); } catch (e) { return; }
+      handleLive(ev);
+    };
+    source.onerror = function () {
+      // EventSource reconnects by itself; keep the last rendered content and say so.
+      live.down = true;
+      statusBanner('Server unreachable, retrying');
+    };
+  }
+
   // ------------------------------------------------------------ start
   (async function start() {
     try {
@@ -337,5 +436,6 @@
     }
     var loc = L.parseLocation(location.search, location.hash);
     await showFile(loc.file, loc.hash);
+    connectLive();
   })();
 })();

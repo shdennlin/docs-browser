@@ -3,8 +3,8 @@
 // (Node 22 has a global WebSocket and fetch). Usage:
 //   node tests/browser.mjs --base http://127.0.0.1:4100 [--chrome PATH] [--ids AC-04,AC-05] [--verbose]
 // Prints one JSON array of {id, ok, note} on stdout. Chrome runs headless with a throw-away profile.
-import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,6 +14,55 @@ const BASE = opt('--base', 'http://127.0.0.1:4100');
 const CHROME = opt('--chrome', process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 const IDS = (opt('--ids', '') || '').split(',').filter(Boolean);
 const VERBOSE = args.includes('--verbose');
+// Fixture edits for the live-reload checks. Local mode edits files directly; with --docker NAME the
+// server runs inside a Linux container and files are edited there with `docker exec`.
+const ROOT = opt('--root', '');
+const BIN = opt('--bin', '');
+const DOCKER = opt('--docker', '');
+const CROOT = opt('--croot', '/tmp/work/tests/fixtures/site');
+const CBIN = opt('--cbin', '/tmp/target/release/docs-browser');
+const fx = (rel) => `${DOCKER ? CROOT : ROOT}/${rel}`;
+const ops = DOCKER ? {
+  read: (p) => spawnSync('docker', ['exec', DOCKER, 'cat', p], { encoding: 'utf8' }).stdout,
+  write: (p, c) => { spawnSync('docker', ['exec', '-i', DOCKER, 'sh', '-c', 'cat > "$1"', 'sh', p], { input: c }); },
+  remove: (p) => { spawnSync('docker', ['exec', DOCKER, 'rm', '-f', p]); },
+  // 50 rewrites in one container-side loop, so the burst really fits in about a second.
+  burst: async (p, n, delayMs) => {
+    const script = 'i=0; while [ $i -lt ' + n + ' ]; do { printf "# API\\n\\nwrite %s\\n" $i; [ $i -eq ' + (n - 1) + ' ] && printf "\\nFINAL-47\\n"; } > "$1"; i=$((i+1)); sleep ' + (delayMs / 1000) + '; done';
+    spawnSync('docker', ['exec', DOCKER, 'sh', '-c', script, 'sh', p]);
+  },
+} : {
+  read: (p) => readFileSync(p, 'utf8'),
+  write: (p, c) => writeFileSync(p, c),
+  remove: (p) => rmSync(p, { force: true }),
+  burst: async (p, n, delayMs) => {
+    for (let i = 0; i < n; i++) {
+      writeFileSync(p, `# API\n\nwrite ${i}\n` + (i === n - 1 ? '\nFINAL-47\n' : ''));
+      await sleep(delayMs);
+    }
+  },
+};
+// Runs `fn` with a fixture file edited, and always puts the original content back.
+async function withEdit(rel, edit, fn) {
+  const original = ops.read(fx(rel));
+  try {
+    ops.write(fx(rel), edit(original));
+    return await fn();
+  } finally {
+    ops.write(fx(rel), original);
+  }
+}
+function startServer(port) {
+  if (DOCKER) {
+    spawnSync('docker', ['exec', '-d', DOCKER, CBIN, CROOT, '--port', String(port)]);
+    return { stop: () => { spawnSync('docker', ['exec', DOCKER, 'pkill', '-INT', '-f', `docs-browser.*--port ${port}`]); } };
+  }
+  const proc = spawn(BIN, [ROOT, '--port', String(port)], { stdio: 'ignore' });
+  return { stop: () => proc.kill('SIGINT') };
+}
+async function portAnswers(port, want, timeout = 10000) {
+  return waitFor(async () => { try { const r = await fetch(`http://127.0.0.1:${port}/`); return want ? r.ok : false; } catch (e) { return !want; } }, timeout, 100);
+}
 const log = (...a) => { if (VERBOSE) console.error('[browser]', ...a); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -72,7 +121,7 @@ async function launchChrome() {
 }
 
 // ---------------------------------------------------------------- page helper
-async function openPage(cdp, url, { waitReady = true } = {}) {
+async function openPage(cdp, url, { waitReady = true, base = BASE } = {}) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const contexts = [];
@@ -100,7 +149,7 @@ async function openPage(cdp, url, { waitReady = true } = {}) {
       if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
       return r.result.value;
     },
-    async goto(u) { await s('Page.navigate', { url: BASE + u }); },
+    async goto(u) { await s('Page.navigate', { url: base + u }); },
     async ready(timeout = 10000) {
       return waitFor(() => page.ev("document.body && document.body.dataset.state === 'ready'"), timeout);
     },
@@ -282,6 +331,138 @@ checks['AC-42'] = async (cdp) => {
   const after = await p.ev("document.getElementById('main').scrollTop");
   await p.close();
   return [!!(r && r.inView && r.mainScroll > 0) && after === 0, JSON.stringify({ anchor: r, scrollAfterNavigation: after })];
+};
+
+
+// ---------------------------------------------------------------- live reload (M4)
+const READY = "document.body.dataset.state === 'ready'";
+const loadCounter = "(function(){ var f=document.querySelector('iframe.html-frame'); window.__loads=0; f.addEventListener('load', function(){ window.__loads++; }); return true; })()";
+
+checks['AC-43'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/long.md');
+  await p.ev("document.getElementById('main').scrollTop = 3000; window.__marker = 43; true");
+  const before = await p.ev("document.getElementById('main').scrollTop");
+  const t0 = Date.now();
+  const res = await withEdit('docs/long.md', (c) => c + '\n\nLIVE-43-MARK\n', async () => {
+    const shown = await waitFor(() => p.ev("document.getElementById('preview').textContent.includes('LIVE-43-MARK')"), 2000, 25);
+    return { shown: !!shown, ms: Date.now() - t0 };
+  });
+  const after = await p.ev("({scroll: document.getElementById('main').scrollTop, marker: window.__marker})");
+  await p.close();
+  const ok = res.shown && after.marker === 43 && Math.abs(after.scroll - before) <= 5;
+  return [ok, JSON.stringify({ ...res, scrollBefore: before, scrollAfter: after.scroll, marker: after.marker })];
+};
+
+checks['AC-44'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/flow.html');
+  await p.ev(loadCounter);
+  const loads = await withEdit('docs/flow.html', (c) => c, async () => waitFor(() => p.ev('window.__loads >= 1 ? window.__loads : null'), 2000, 25));
+  await p.close();
+  return [!!loads, `iframe load events after the edit=${loads}`];
+};
+
+checks['AC-45'] = async (cdp) => {
+  const rel = 'docs/live-45.md';
+  ops.remove(fx(rel));
+  const p = await openPage(cdp, '/?file=docs/api.md');
+  try {
+    ops.write(fx(rel), '# Live 45\n');
+    const listed = await waitFor(() => p.ev(`!!document.querySelector('#tree a[data-path="${rel}"]')`), 2500, 50);
+    await p.goto('/?file=' + rel);
+    await p.ready();
+    const first = await p.ev("(document.querySelector('#preview h1')||{}).textContent");
+    ops.remove(fx(rel));
+    const gone = await waitFor(() => p.ev("(document.querySelector('#preview .state')||{}).textContent === 'File no longer exists'"), 2000, 25);
+    const urlKept = await p.ev(`location.search === '?file=${rel}'`);
+    ops.write(fx(rel), '# Live 45 again\n');
+    const back = await waitFor(() => p.ev("(document.querySelector('#preview h1')||{}).textContent === 'Live 45 again'"), 2500, 25);
+    return [!!listed && first === 'Live 45' && !!gone && urlKept && !!back,
+      JSON.stringify({ listed: !!listed, first, goneMessage: !!gone, urlKept, restored: !!back })];
+  } finally {
+    ops.remove(fx(rel));
+    await p.close();
+  }
+};
+
+checks['AC-46'] = async (cdp) => {
+  const rel = 'docs/new-46.md';
+  ops.remove(fx(rel));
+  const p = await openPage(cdp, '/?file=docs/architecture.md');
+  try {
+    ops.write(fx(rel), '# New 46\n');
+    const appeared = await waitFor(() => p.ev(`!!document.querySelector('#tree a[data-path="${rel}"]')`), 2500, 50);
+    const stillOpen = await p.ev("!!document.querySelector('details[data-dir=\"docs\"]').open");
+    ops.remove(fx(rel));
+    const vanished = await waitFor(() => p.ev(`!document.querySelector('#tree a[data-path="${rel}"]')`), 2500, 50);
+    return [!!appeared && stillOpen && !!vanished, JSON.stringify({ appeared: !!appeared, docsStillExpanded: stillOpen, vanished: !!vanished })];
+  } finally {
+    ops.remove(fx(rel));
+    await p.close();
+  }
+};
+
+checks['AC-47'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/api.md');
+  const count = () => p.ev("performance.getEntriesByType('resource').filter(function(e){ return e.name.indexOf('/api/file') >= 0; }).length");
+  const base = await count();
+  const original = ops.read(fx('docs/api.md'));
+  try {
+    const t0 = Date.now();
+    await ops.burst(fx('docs/api.md'), 50, 20);
+    const burstMs = Date.now() - t0;
+    await sleep(2000);
+    const renders = (await count()) - base;
+    const final = await p.ev("document.getElementById('preview').textContent.includes('FINAL-47')");
+    return [renders <= 5 && final && burstMs <= 2000, JSON.stringify({ rerenders: renders, finalContentShown: final, burstMs })];
+  } finally {
+    ops.write(fx('docs/api.md'), original);
+    await p.close();
+  }
+};
+
+checks['AC-52'] = async (cdp) => {
+  const PORT = 4103;
+  const rel = 'docs/after-restart-52.md';
+  ops.remove(fx(rel));
+  let server = startServer(PORT);
+  try {
+    if (!(await portAnswers(PORT, true))) return [false, 'test server did not start'];
+    const p = await openPage(cdp, '/?file=README.md', { base: `http://127.0.0.1:${PORT}` });
+    await p.ev('window.__marker = 52; true');
+    await sleep(500); // let the EventSource connect
+    server.stop();
+    const down = await waitFor(() => p.ev("document.getElementById('live-status').textContent.indexOf('Server unreachable') >= 0 && !document.getElementById('live-status').hidden"), 15000, 100);
+    ops.write(fx(rel), '# After restart\n');
+    await portAnswers(PORT, false, 5000);
+    server = startServer(PORT);
+    await portAnswers(PORT, true);
+    const cleared = await waitFor(() => p.ev("document.getElementById('live-status').hidden"), 25000, 100);
+    const refetched = await waitFor(() => p.ev(`!!document.querySelector('#tree a[data-path="${rel}"]')`), 10000, 100);
+    const marker = await p.ev('window.__marker');
+    await p.close();
+    return [!!down && !!cleared && !!refetched && marker === 52,
+      JSON.stringify({ bannerShown: !!down, bannerCleared: !!cleared, treeRefetched: !!refetched, noManualReload: marker === 52 })];
+  } finally {
+    server.stop();
+    ops.remove(fx(rel));
+    await sleep(300);
+  }
+};
+
+checks['AC-53'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=link-in/architecture.md');
+  const shown = await withEdit('docs/architecture.md', (c) => c + '\n\nALIAS-53-MARK\n', async () =>
+    waitFor(() => p.ev("document.getElementById('preview').textContent.includes('ALIAS-53-MARK')"), 2000, 25));
+  await p.close();
+  return [!!shown, `view of link-in/architecture.md re-rendered after editing docs/architecture.md: ${!!shown}`];
+};
+
+checks['AC-54'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/flow.html');
+  await p.ev(loadCounter);
+  const loads = await withEdit('docs/style.css', (c) => c + '\n/* live-54 */\n', async () => waitFor(() => p.ev('window.__loads >= 1 ? window.__loads : null'), 2000, 25));
+  await p.close();
+  return [!!loads, `iframe load events after editing style.css=${loads}`];
 };
 
 // ---------------------------------------------------------------- run

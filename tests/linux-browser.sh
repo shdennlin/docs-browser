@@ -6,7 +6,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-ids="${1:-AC-03b,AC-04,AC-05,AC-06,AC-07b,AC-09,AC-10,AC-12b,AC-13b,AC-15,AC-17,AC-40,AC-41,AC-42}"
+ids="${1:-AC-03b,AC-04,AC-05,AC-06,AC-07b,AC-09,AC-10,AC-12b,AC-13b,AC-14b,AC-15,AC-17,AC-40,AC-41,AC-42,AC-43,AC-44,AC-45,AC-46,AC-47,AC-52,AC-53,AC-54}"
 name="docs-browser-linux-$$"
 cargo_vol=docs-browser-cargo
 target_vol=docs-browser-target
@@ -53,7 +53,9 @@ curl -sf -o /dev/null http://127.0.0.1:4100/ || { echo "server in the container 
 echo "container: $(docker exec "$name" cat /tmp/info)"
 
 main_ids="$(echo "$ids" | tr ',' '\n' | grep -v '^AC-14b$' | paste -sd, -)"
-node "$root/tests/browser.mjs" --base http://127.0.0.1:4100 --ids "$main_ids" > /tmp/linux-browser-main.json
+# Fixture edits and server restarts for the live-reload checks happen inside the container.
+node "$root/tests/browser.mjs" --base http://127.0.0.1:4100 --ids "$main_ids" \
+  --docker "$name" --croot /tmp/work/tests/fixtures/site --cbin /tmp/target/release/docs-browser > /tmp/linux-browser-main.json
 node "$root/tests/browser.mjs" --base http://127.0.0.1:4102 --ids AC-14b > /tmp/linux-browser-big.json
 python3 - <<'PY'
 import json

@@ -62,3 +62,16 @@ Tracks PRD section 16 tasks and evidence. Run `python3 tests/suite.py` for the l
 | CP-3 checkpoint | done | `/reviewer:result --base cp3-base` run 20261124T090059Z-ZJWAMO: PASS, 0 critical, 0 high, 2 medium, 5 low; all 7 verified true and fixed: anchor scroll waits for images; navigation resets scroll and the `wide` layout; slugs come from rendered text; heading ids prefixed `user-content-`; test header and AC-40 race fixed. My first scroll-reset assertion was vacuous (a short file lets the browser clamp the offset); replaced by re-opening the long file, mutation now caught. |
 
 Docker leftovers to remove when finished: volumes `docs-browser-cargo` and `docs-browser-target`.
+
+## M4 (work done, CP-4 pending)
+
+| Task | Status | Evidence |
+|---|---|---|
+| T-4.1 watcher | done | `watch.rs`: raw notify events, `follow_symlinks(false)`, `Access` events ignored, own quiet-period debounce (200 ms, cap 1 s) |
+| T-4.2 state task | done | classifier against the snapshot, aliases, rebuild-then-broadcast, coalescing, failed-rebuild handling; UT-12 to UT-16 PASS on macOS and Linux |
+| T-4.3 `/api/events` | done | keep-alive, `resync` on lag, `unavailable`, `bye`, 32-stream cap, graceful shutdown; AC-26b, 50, 51, 56 PASS |
+| T-4.4 client | done | EventSource, debounced re-render keeping scroll, iframe reload, removed and restore, reconnect banner; AC-43 to 47, 52 to 54 PASS |
+| Platforms | done | macOS: all 20 M4 rows PASS. Linux container: Python/SSE rows and UT PASS; browser rows 23/23 PASS via `tests/linux-browser.sh` (AC-47 shows 5 re-renders on Linux, the limit is 5, so it is borderline; macOS shows 1) |
+| Mutation checks | done | macOS: visibility filter, rebuild-before-broadcast, SSE cap, bye, keep-alive each fail their AC. Linux only: `follow_symlinks(true)` fails AC-57; counting access events as changes fails AC-48 |
+| Finding worth remembering | | **Linux-only feedback loop**: the server's own directory reads emit inotify access events, and `notify-debouncer-mini` forwarded them, so an idle server rebuilt the tree forever (and never sent a keep-alive). macOS FSEvents has no such events, so macOS passed. Fixed by raw notify events with `Access` ignored; PRD 8.1, 8.2, 10.1 amended (v1.4.6); idle-silence assertion added to AC-48 and AC-57 |
+| CP-4 checkpoint | pending | |

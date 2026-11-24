@@ -482,7 +482,9 @@ def run_browser(ctx, base, ids):
         raise Skip("node not found")
     if not os.path.exists(chrome):
         raise Skip(f"Chrome not found at {chrome}")
-    r = sh(["node", "tests/browser.mjs", "--base", base, "--chrome", chrome, "--ids", ",".join(ids)], cwd=ROOT)
+    cmd = ["node", "tests/browser.mjs", "--base", base, "--chrome", chrome, "--ids", ",".join(ids),
+           "--root", FIXTURE_SITE, "--bin", ctx["bin"]]
+    r = sh(cmd, cwd=ROOT)
     try:
         rows = json.loads(r.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -534,6 +536,224 @@ def ac_16(ctx):
     return ok, f"node --test: exit={r.returncode} pass={tests.group(1) if tests else '?'}"
 
 
+# ---------------------------------------------------------------- M4
+BROWSER_IDS_M4 = ["AC-43", "AC-44", "AC-45", "AC-46", "AC-47", "AC-52", "AC-53", "AC-54"]
+PORT_SSE = 4104     # server used by the shutdown check
+PORT_CAP = 4105     # server used by the SSE cap check
+
+
+class SSE:
+    """Minimal Server-Sent Events client on a raw socket (so odd headers can be sent)."""
+
+    def __init__(self, port, headers=None, host=None):
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
+        extra = "".join(f"{k}: {v}\r\n" for k, v in (headers or {}).items())
+        self.sock.sendall((f"GET /api/events HTTP/1.1\r\nHost: {host or f'127.0.0.1:{port}'}\r\n"
+                           f"Accept: text/event-stream\r\n{extra}\r\n").encode())
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        head, _, rest = data.partition(b"\r\n\r\n")
+        self.status = int(head.split(b" ")[1]) if head else 0
+        self.buf = rest
+
+    def lines(self, seconds):
+        """All lines received during the next `seconds`."""
+        end = time.time() + seconds
+        while time.time() < end:
+            self.sock.settimeout(max(0.05, end - time.time()))
+            try:
+                chunk = self.sock.recv(65536)
+            except socket.timeout:
+                break
+            except OSError:
+                break
+            if not chunk:
+                break
+            self.buf += chunk
+        text, self.buf = self.buf.decode("utf-8", errors="replace"), b""
+        return [ln for ln in text.splitlines() if ln.strip()]
+
+    def events(self, seconds):
+        out = []
+        for ln in self.lines(seconds):
+            if ln.startswith("data:"):
+                try:
+                    out.append(json.loads(ln[5:].strip()))
+                except ValueError:
+                    pass
+        return out
+
+    def wait_for(self, predicate, timeout):
+        """Reads until an event satisfies `predicate`; returns it or None."""
+        end = time.time() + timeout
+        while time.time() < end:
+            for ev in self.events(min(0.25, max(0.05, end - time.time()))):
+                if predicate(ev):
+                    return ev
+        return None
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+class edited:
+    """Context manager: rewrite a fixture file, restore the original on exit."""
+
+    def __init__(self, path, transform):
+        self.path, self.transform = path, transform
+
+    def __enter__(self):
+        self.original = open(self.path, "rb").read()
+        open(self.path, "wb").write(self.transform(self.original))
+
+    def __exit__(self, *a):
+        open(self.path, "wb").write(self.original)
+
+
+def _fx(rel):
+    return os.path.join(FIXTURE_SITE, rel)
+
+
+def _quiet(srv_port):
+    """Lets earlier file activity settle, then returns a fresh SSE client with its backlog drained."""
+    time.sleep(1.0)
+    sse = SSE(srv_port)
+    sse.lines(0.6)
+    return sse
+
+
+def _no_event_but_control(port, quiet_path):
+    """No event for `quiet_path` within 3 s, while a visible file does produce one (control)."""
+    sse = _quiet(port)
+    try:
+        # An idle server must stay silent: its own tree rebuilds must not trigger new rebuilds
+        # (on Linux, listing a directory emits access events; they must not count as changes).
+        idle = sse.events(2.0)
+        with edited(quiet_path, lambda b: b + b"\nquiet-change\n"):
+            leaked = sse.events(3.0)
+        with edited(_fx("docs/api.md"), lambda b: b + b"\ncontrol-change\n"):
+            control = sse.wait_for(lambda e: e.get("type") == "changed" and e.get("path") == "docs/api.md", 3.0)
+    finally:
+        sse.close()
+    return idle + leaked, control
+
+
+@ac("AC-26b")
+def ac_26b(ctx):
+    server(ctx)
+    sse = SSE(PORT, headers={"Origin": "http://evil.example"})
+    sse.close()
+    return sse.status == 403, f"status={sse.status}"
+
+
+@ac("AC-48")
+def ac_48(ctx):
+    server(ctx)
+    leaked, control = _no_event_but_control(PORT, _fx("node_modules/pkg/index.md"))
+    return not leaked and control is not None, f"events_for_ignored_dir={leaked} control_event_seen={control is not None}"
+
+
+@ac("AC-57")
+def ac_57(ctx):
+    server(ctx)
+    outside = os.path.join(os.path.dirname(FIXTURE_SITE), "site-evil", "secret.md")
+    leaked, control = _no_event_but_control(PORT, outside)
+    return not leaked and control is not None, f"events_for_out_of_root_link={leaked} control_event_seen={control is not None}"
+
+
+@ac("AC-50")
+def ac_50(ctx):
+    with Server(ctx["bin"], FIXTURE_SITE, PORT_SSE) as srv:
+        sse = SSE(PORT_SSE)
+        sse.lines(0.5)
+        t0 = time.time()
+        srv.proc.send_signal(signal.SIGINT)
+        bye = sse.wait_for(lambda e: e.get("type") == "bye", 3.0)
+        try:
+            code = srv.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            code = None
+        took = time.time() - t0
+        sse.close()
+    return bye is not None and code == 0 and took <= 2.0, f"bye_received={bye is not None} exit_code={code} took={took:.2f}s"
+
+
+@ac("AC-51")
+def ac_51(ctx):
+    server(ctx)
+    sse = SSE(PORT)
+    lines = sse.lines(16.5)
+    sse.close()
+    comments = [ln for ln in lines if ln.startswith(":")]
+    return len(comments) >= 1, f"comment lines in 16.5 s={comments[:2]}"
+
+
+@ac("AC-55")
+def ac_55(ctx):
+    server(ctx)
+    sse = _quiet(PORT)
+    ok_count, failures = 0, []
+    try:
+        for i in range(100):
+            rel = f"docs/order-55-{i}.md"
+            path = _fx(rel)
+            open(path, "w").write("# o\n")
+            try:
+                ev = sse.wait_for(lambda e: e.get("type") == "tree", 5.0)
+                if ev is None:
+                    failures.append(f"{i}: no tree event")
+                    continue
+                tree = json.loads(get(PORT, "/api/tree")[2])
+                if any(p == rel for _, _, p in flatten(tree)):
+                    ok_count += 1
+                else:
+                    failures.append(f"{i}: tree event arrived but /api/tree lacked the file")
+            finally:
+                os.remove(path)
+                sse.wait_for(lambda e: e.get("type") == "tree", 5.0)  # the removal's tree event
+    finally:
+        sse.close()
+    return ok_count == 100, f"{ok_count}/100 present immediately after the tree event; failures={failures[:3]}"
+
+
+@ac("AC-56")
+def ac_56(ctx):
+    with Server(ctx["bin"], FIXTURE_SITE, PORT_CAP):
+        clients = [SSE(PORT_CAP) for _ in range(32)]
+        first = [c.status for c in clients]
+        extra = SSE(PORT_CAP)
+        status33 = extra.status
+        extra.close()
+        for c in clients:
+            c.close()
+    return all(st == 200 for st in first) and status33 == 503, f"first 32 ok={all(st == 200 for st in first)} 33rd={status33}"
+
+
+def browser_check_m4(ctx, ac_id):
+    if "browser_m4" not in ctx:
+        server(ctx)
+        ctx["browser_m4"] = run_browser(ctx, f"http://127.0.0.1:{PORT}", BROWSER_IDS_M4)
+    return ctx["browser_m4"][ac_id]
+
+
+def _make_m4_browser_ac(ac_id):
+    def fn(ctx):
+        return browser_check_m4(ctx, ac_id)
+    fn.__name__ = "ac_" + ac_id.lower().replace("-", "_")
+    return fn
+
+
+for _id in BROWSER_IDS_M4:
+    REGISTRY[_id] = _make_m4_browser_ac(_id)
+
+
 # ---------------------------------------------------------------- driver
 def main():
     p = argparse.ArgumentParser()
@@ -541,6 +761,7 @@ def main():
     p.add_argument("--platform", default=sys.platform)
     p.add_argument("--bin", default=os.path.join(ROOT, "target", "release", "docs-browser"))
     p.add_argument("--chrome", default=None, help="Chrome binary for the browser checks")
+    p.add_argument("--only", default="", help="comma-separated IDs to run (default: all rows of the milestone)")
     args = p.parse_args()
 
     if not os.path.exists(FIXTURE_SITE):
@@ -552,6 +773,9 @@ def main():
     atexit.register(lambda: [s.stop() for s in ctx["servers"].values()])
     rows = prd_rows()
     sel = [(i, m) for i, m in rows if args.milestone in ("all", m)]
+    if args.only:
+        wanted = set(args.only.split(","))
+        sel = [(i, m) for i, m in sel if i in wanted]
     results = []
     for ac_id, m in sel:
         fn = REGISTRY.get(ac_id)

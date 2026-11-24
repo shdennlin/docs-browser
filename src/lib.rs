@@ -3,6 +3,7 @@
 pub mod resolve;
 pub mod server;
 pub mod tree;
+pub mod watch;
 
 #[cfg(test)]
 pub mod testutil;

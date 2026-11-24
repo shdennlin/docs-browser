@@ -1,10 +1,12 @@
 //! docs-browser entry point. T-2.0 provides the minimal CLI; the full CLI arrives in milestone M5.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::Parser;
 use docs_browser::resolve::Resolver;
 use docs_browser::server::{router, AppState};
+use docs_browser::watch;
 
 #[derive(Parser)]
 #[command(name = "docs-browser", version, about = "Zero-config local browser for project documentation")]
@@ -45,8 +47,24 @@ async fn run() -> anyhow::Result<()> {
     let state = AppState::new(resolver, local);
     eprintln!("Serving {} at http://{}", root.display(), local);
 
+    // Live reload: if the OS watcher cannot start, the server keeps serving (PRD 8.5).
+    let live = watch::init_live(&state, &root, watch::start_watcher);
+    let _watcher_guard = live.map(|(handle, rx)| {
+        tokio::spawn(watch::run(Arc::new(watch::Pipeline::new(state.clone())), rx));
+        handle
+    });
+
+    let shutdown_state = state.clone();
     axum::serve(listener, router(state))
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            // Tell every SSE stream to say `bye`, and never wait longer than 2 s for the rest.
+            let _ = shutdown_state.shutdown.send(true);
+            tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                std::process::exit(0);
+            });
+        })
         .await?;
     Ok(())
 }

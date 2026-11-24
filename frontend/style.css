@@ -33,3 +33,5 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 .mermaid-error .mermaid-error-title { font-weight: 600; color: #cf222e; margin-bottom: 4px; }
 .mermaid-error pre { margin: 6px 0 0; }
 .mermaid { margin: 12px 0; text-align: center; }
+[hidden] { display: none !important; }
+#live-status { position: sticky; top: 0; z-index: 2; background: #bf8700cc; color: #fff; }
