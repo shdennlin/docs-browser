@@ -160,6 +160,9 @@ async function openPage(cdp, url, { waitReady = true, base = BASE, fakeEventSour
       return r.result.value;
     },
     async goto(u) { await s('Page.navigate', { url: base + u }); },
+    async viewport(w, h) {
+      await s('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+    },
     async mouse(type, x, y, extra = {}) {
       await s('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
     },
@@ -362,17 +365,40 @@ checks['AC-70'] = async (cdp) => {
     await p.mouse('mouseReleased', toX, h.y);
     return width();
   };
+  const reload = async () => { await p.ev('location.reload(); true'); await sleep(300); await p.ready(); };
+  const store = (v) => p.ev(`localStorage.setItem('docs-browser.sidebarWidth', ${JSON.stringify(v)}); true`);
   const out = {};
   try {
     out.start = await width();
-    out.afterDrag = await dragTo((await handle()).x + 120);
+    // The grab point inside the 6 px divider must not make the first move jump: +120 px gives exactly +120.
+    const h0 = await handle();
+    await p.mouse('mousePressed', h0.x, h0.y);
+    await p.mouse('mouseMoved', h0.x + 120, h0.y);
+    out.duringDrag = await width();
+    out.resizingDuringDrag = await p.ev("document.body.classList.contains('resizing')");
+    // Losing pointer capture without a pointerup must not leave the drag state stuck.
+    await p.ev("document.getElementById('resizer').releasePointerCapture(1); true");
+    // Chromium fires `lostpointercapture` when the next pointer event is processed, so move the mouse once
+    // (with a real mouse this happens at once).
+    await p.mouse('mouseMoved', h0.x + 121, h0.y);
+    await sleep(80);
+    out.resizingAfterLostCapture = await p.ev("document.body.classList.contains('resizing')");
+    await p.mouse('mouseReleased', h0.x + 120, h0.y);
+    out.afterDrag = await width();
     out.stored = await p.ev("localStorage.getItem('docs-browser.sidebarWidth')");
-    await p.ev('location.reload(); true');
-    await sleep(300);
-    await p.ready();
+    await reload();
     out.afterReload = await width();
     out.tooWide = await dragTo(1270);   // 60% of the 1280 px test window is 768
     out.tooNarrow = await dragTo(5);    // the minimum is 180
+    // A stored value from another screen or version is clamped, or ignored when it is not a plain integer.
+    await store('5000'); await reload(); out.storedTooBig = await width();
+    await store('12');   await reload(); out.storedTooSmall = await width();
+    await store(' 420 '); await reload(); out.storedPadded = await width();
+    await store('abc');  await reload(); out.storedGarbage = await width();
+    // The chosen width survives a smaller window and comes back when the window grows again.
+    await store('600');  await reload(); out.chosen600 = await width();
+    await p.viewport(800, 800); await sleep(150); out.inSmallWindow = await width();   // 60% of 800 is 480
+    await p.viewport(1280, 800); await sleep(150); out.afterRegrow = await width();
     const h = await handle();
     for (const n of [1, 2]) {           // two clicks: a double click resets the width
       await p.mouse('mousePressed', h.x, h.y, { clickCount: n });
@@ -380,20 +406,23 @@ checks['AC-70'] = async (cdp) => {
     }
     await sleep(100);
     out.afterDoubleClick = await width();
+    out.aria = await p.ev("(function(){var r=document.getElementById('resizer'); return [r.getAttribute('aria-valuemin'), r.getAttribute('aria-valuenow'), r.getAttribute('aria-valuemax')].join('/');})()");
     await p.ev("document.getElementById('resizer').focus(); true");
     await p.key('ArrowRight', 'ArrowRight', 39);
     out.keyRight = await width();
     await p.key('ArrowLeft', 'ArrowLeft', 37);
     out.keyLeft = await width();
-    out.aria = await p.ev("(function(){var r=document.getElementById('resizer'); return [r.getAttribute('aria-valuemin'), r.getAttribute('aria-valuenow'), r.getAttribute('aria-valuemax')].join('/');})()");
   } finally {
     await p.ev("localStorage.removeItem('docs-browser.sidebarWidth'); true");
     await p.close();
   }
-  const near = (a, b, d = 2) => Math.abs(a - b) <= d;
-  const ok = near(out.start, 300) && near(out.afterDrag, 420, 3) && out.stored === String(out.afterDrag)
-    && near(out.afterReload, out.afterDrag, 1) && out.tooWide >= 760 && out.tooWide <= 768 && out.tooNarrow === 180
-    && out.afterDoubleClick === 300 && out.keyRight === 316 && out.keyLeft === 300 && out.aria === '180/300/768';
+  const near = (a, b, d = 1) => Math.abs(a - b) <= d;
+  const ok = out.start === 300 && near(out.duringDrag, 420) && out.resizingDuringDrag === true
+    && out.resizingAfterLostCapture === false && near(out.afterDrag, 420) && out.stored === String(out.afterDrag)
+    && near(out.afterReload, out.afterDrag) && out.tooWide === 768 && out.tooNarrow === 180
+    && out.storedTooBig === 768 && out.storedTooSmall === 180 && out.storedPadded === 300 && out.storedGarbage === 300
+    && out.chosen600 === 600 && out.inSmallWindow === 480 && out.afterRegrow === 600
+    && out.afterDoubleClick === 300 && out.aria === '180/300/768' && out.keyRight === 316 && out.keyLeft === 300;
   return [ok, JSON.stringify(out)];
 };
 

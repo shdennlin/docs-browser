@@ -194,11 +194,12 @@
     return Math.min(max, Math.max(SIDEBAR_MIN, n));
   }
 
-  // A stored value is trusted only if it is a plain integer of two to four digits.
+  // A stored value is trusted only if it is exactly a plain integer of two to four digits, with no
+  // spaces, sign or leading zero. Anything else is ignored.
   function parseStoredWidth(value) {
     if (value === null || value === undefined) return null;
-    var s = String(value).trim();
-    return /^\d{2,4}$/.test(s) ? Number(s) : null;
+    var s = String(value);
+    return /^[1-9]\d{1,3}$/.test(s) ? Number(s) : null;
   }
 
   return {

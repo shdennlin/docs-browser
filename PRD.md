@@ -22,6 +22,7 @@
 | v1.4.12 (2026-11-24) | AC-45 also runs two interleavings deterministically, with the test delivering `changed`, `removed` and `tree` events itself through a fake EventSource: a pending re-render must not overwrite "no longer exists", and a 404 must mark the file missing so a later `tree` event restores it (8.4, 8.5) |
 | v1.4.13 (2026-11-24) | Final whole-project review: the release profile of 10.1 is now in `Cargo.toml`; unused `anyhow` and `tokio-stream` removed; a literal `+` in `?file=` stays a plus (5); folders the user closed are not re-opened by a tree update, ancestors open on navigation only (5); a rescan runs once the watcher is registered, so changes during the first scan are not lost (8.1); only an `http://` origin counts as same-origin (12.1); watcher and rebuild error text is escaped (9.3); release 0.1.2 carries D11 |
 | v1.4.14 (2026-11-24) | Resizable sidebar added on request: drag, keyboard, double click, 180 px to 60% limits, remembered in `localStorage` (5, AC-70, T-3.5) |
+| v1.4.15 (2026-11-24) | Sidebar review fixes: a drag follows one pointer and also ends on lost capture and window blur; no jump at the grab point; the chosen width survives a smaller window; a stored value must be a strict integer; AC-70 checks all of it (5) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -166,7 +167,7 @@ Clicking a file updates the preview without reloading the entire application.
 
 ### Sidebar width
 
-The width of the file list can be changed by dragging the divider between the list and the preview (mouse or touch). The divider is also a keyboard control: focus it, then Left and Right change the width by 16 px (48 px with Shift) and Home restores the default. A double click restores the default of 300 px. The width stays between 180 px and 60% of the window, even when the window is resized, and is remembered in the browser's `localStorage` (key `docs-browser.sidebarWidth`; a stored value that is not a plain integer is ignored). While dragging, the preview iframe cannot swallow the mouse. Added after the first release plan, on request, 2026-11-24 (AC-70, T-3.5).
+The width of the file list can be changed by dragging the divider between the list and the preview (mouse or touch). The divider is also a keyboard control: focus it, then Left and Right change the width by 16 px (48 px with Shift) and Home restores the default. A double click restores the default of 300 px. The width stays between 180 px and 60% of the window, even when the window is resized, and is remembered in the browser's `localStorage` (key `docs-browser.sidebarWidth`). A stored value is used only if it is exactly a plain integer of two to four digits (no spaces, sign or leading zero) and is then clamped to the limits; anything else gives the default. The width the user chose is kept when the window shrinks and comes back when it grows again. A drag follows one pointer, moves the divider by exactly the distance the pointer moved, and ends on release, cancel, lost pointer capture or the window losing focus. While dragging, the preview iframe cannot swallow the mouse. Added after the first release plan, on request, 2026-11-24 (AC-70, T-3.5).
 
 ### Deep-link behaviour
 
@@ -678,7 +679,7 @@ site/
 | AC-14b | M3 | §7.2 cap UI | Same root in the browser | Shows "Tree truncated" |
 | AC-15 | M3 | §6 UTF-8 | Browser `/?file=docs/utf8-bad.md` | Page renders with the banner "File contained invalid UTF-8" |
 | AC-16 | M3 | §6 slugs | `node --test frontend/*.test.js` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
-| AC-70 | M3 | §5 sidebar width | Browser, in a 1280 px window: drag the divider 120 px to the right, reload, drag far right and far left, double click the divider, then focus it and press Right and Left | The width goes 300 to about 420 (stored in `localStorage` and still about 420 after the reload); far right stops at 768 (60% of the window), far left at 180; the double click gives 300; Right gives 316 and Left gives 300; `aria-valuemin/now/max` read `180/300/768` |
+| AC-70 | M3 | §5 sidebar width | Browser, in a 1280 px window: drag the divider 120 px to the right (and release the pointer capture without a pointerup, then move the mouse once), reload, drag far right and far left; seed `localStorage` with `5000`, `12`, ` 420 ` and `abc`; seed `600`, shrink the window to 800 px and grow it back; double click the divider; focus it and press Right and Left | 300 becomes exactly 420 (stored, and 420 after the reload) and `body.resizing` is cleared after the lost capture; far right gives 768 (60% of the window), far left 180; the seeded values give 768, 180, 300 and 300; 600 becomes 480 in the 800 px window and 600 again afterwards; the double click gives 300; `aria-valuemin/now/max` read `180/300/768`; Right gives 316 and Left gives 300 |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security

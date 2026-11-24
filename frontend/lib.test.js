@@ -94,7 +94,8 @@ test('sidebar width is clamped to 180 px .. 60% of the window and stored values 
   assert.equal(L.clampSidebarWidth(NaN, 1280), 300);
   assert.equal(L.clampSidebarWidth('420.4', 1280), 420);
   assert.equal(L.parseStoredWidth('420'), 420);
-  for (const bad of [null, undefined, '', 'abc', '-5', '12.5', '99999', '1e3', '0x10', ' ']) {
+  assert.equal(L.parseStoredWidth('99'), 99);
+  for (const bad of [null, undefined, '', 'abc', '-5', '12.5', '99999', '1e3', '0x10', ' ', ' 420 ', '0420', '420\n', '+420']) {
     assert.equal(L.parseStoredWidth(bad), null, String(bad));
   }
 });
