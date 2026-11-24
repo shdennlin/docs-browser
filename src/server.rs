@@ -34,6 +34,7 @@ frame-ancestors 'none'";
 #[exclude = "vendor/CHECKSUMS"]
 #[exclude = "vendor/VERSIONS"]
 #[exclude = "vendor/LICENSE.*"]
+#[exclude = "*.test.js"]
 struct Assets;
 
 pub struct AppState {

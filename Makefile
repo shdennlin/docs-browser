@@ -19,7 +19,7 @@ run: build ## Run the release binary (pass flags with ARGS="...")
 test: ## Run Rust tests, the vendored-file checksum test and frontend unit tests
 	cargo test
 	./tests/check-vendor.sh --selftest
-	@if ls frontend/*.test.js >/dev/null 2>&1; then node --test frontend/; else echo "no frontend tests yet"; fi
+	@if ls frontend/*.test.js >/dev/null 2>&1; then node --test frontend/*.test.js; else echo "no frontend tests yet"; fi
 
 clean: ## Remove build output
 	cargo clean

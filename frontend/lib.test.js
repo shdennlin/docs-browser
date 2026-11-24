@@ -1,0 +1,84 @@
+// Unit tests for frontend/lib.js. Run with: node --test frontend/
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const L = require('./lib.js');
+
+test('ac_16 slugs follow the GitHub rules', () => {
+  assert.equal(L.slugify('Data Flow'), 'data-flow');
+  assert.equal(L.slugify('中文 標題'), '中文-標題');
+  assert.equal(L.slugify('  Hello, World! (v2)  '), 'hello-world-v2');
+  assert.equal(L.slugify('snake_case and-dash'), 'snake_case-and-dash');
+  const slug = L.makeSlugger();
+  assert.deepEqual(['Intro', 'Intro', 'Intro', 'Other'].map(slug), ['intro', 'intro-1', 'intro-2', 'other']);
+});
+
+test('extension handling matches the server (dot files have none)', () => {
+  assert.equal(L.ext('docs/UPPER.MD'), 'md');
+  assert.equal(L.ext('.env'), '');
+  assert.equal(L.ext('a/b.tar.gz'), 'gz');
+  assert.ok(L.isMarkdown('x.markdown') && L.isHtml('y.HTM') && !L.isSupported('z.css'));
+});
+
+test('resolveRelative stays inside the root', () => {
+  assert.equal(L.resolveRelative('docs/a.md', './b.md'), 'docs/b.md');
+  assert.equal(L.resolveRelative('docs/a.md', '../README.md'), 'README.md');
+  assert.equal(L.resolveRelative('docs/a.md', '../../x.md'), null);
+  assert.equal(L.resolveRelative('README.md', 'docs//api.md'), 'docs/api.md');
+  assert.equal(L.resolveRelative('docs/a.md', '/other/x.md'), 'other/x.md');
+  assert.equal(L.resolveRelative('a.md', '%E4%B8%AD%20x.md'), '中 x.md');
+  assert.equal(L.resolveRelative('a.md', '%zz'), null);
+});
+
+test('classifyLink applies the PRD 6 link rules', () => {
+  const tree = new Set(['README.md', 'docs/api.md', 'docs/architecture.md']);
+  const c = (href, from = 'docs/links.md') => L.classifyLink(href, from, tree);
+  assert.equal(c('./api.md').kind, 'internal');
+  assert.equal(c('./api.md').path, 'docs/api.md');
+  assert.equal(c('../README.md#top').hash, 'top');
+  assert.equal(c('https://example.com').kind, 'external');
+  assert.equal(c('mailto:a@b.c').kind, 'external');
+  assert.equal(c('javascript:alert(1)').kind, 'inert');
+  assert.equal(c('data:text/html,x').kind, 'inert');
+  assert.equal(c('file:///etc/passwd').kind, 'inert');
+  assert.equal(c('//evil.example/x').kind, 'inert');
+  assert.equal(c('../../outside.md').kind, 'text');
+  assert.equal(c('../notes.txt').kind, 'text');
+  assert.equal(c('./missing.md').kind, 'text');
+  assert.equal(c('./diagram.svg').kind, 'asset');
+  assert.equal(c('../node_modules/x/y.css').kind, 'text');
+  assert.equal(c('#section').kind, 'anchor');
+});
+
+test('rewriteImageSrc resolves against the Markdown file', () => {
+  assert.equal(L.rewriteImageSrc('./diagram.svg', 'docs/architecture.md'), '/files/docs/diagram.svg');
+  assert.equal(L.rewriteImageSrc('../diagram.svg', 'docs/subdir/rel.md'), '/files/docs/diagram.svg');
+  assert.equal(L.rewriteImageSrc('https://x.example/a.png', 'a.md'), 'https://x.example/a.png');
+  assert.equal(L.rewriteImageSrc('http://x.example/a.png', 'a.md'), null);
+  assert.equal(L.rewriteImageSrc('../../x.png', 'docs/a.md'), null);
+  assert.equal(L.rewriteImageSrc('notes.txt', 'a.md'), null);
+  assert.equal(L.rewriteImageSrc('中文 圖.png', 'a.md'), '/files/%E4%B8%AD%E6%96%87%20%E5%9C%96.png');
+});
+
+test('URL state round-trips, including CJK, spaces and plus signs', () => {
+  for (const file of ['docs/architecture.md', 'docs/中文 筆記.md', 'a+b/c d.md', 'x&y.md']) {
+    const url = L.buildUrl(file, 'sec tion');
+    const u = new URL(url, 'http://127.0.0.1:4100');
+    const got = L.parseLocation(u.search, u.hash);
+    assert.equal(got.file, file);
+    assert.equal(got.hash, 'sec tion');
+  }
+  assert.equal(L.buildUrl(null, ''), '/');
+  assert.equal(L.parseLocation('', '').file, null);
+  assert.deepEqual(L.ancestors('docs/sub/x.md'), ['docs', 'docs/sub']);
+  assert.deepEqual(L.ancestors('README.md'), []);
+});
+
+test('collectPaths and decodeMarkdownBytes', () => {
+  const tree = [{ name: 'docs', type: 'directory', children: [{ name: 'a.md', type: 'file', path: 'docs/a.md' }] },
+    { name: 'R.md', type: 'file', path: 'R.md' }];
+  assert.deepEqual([...L.collectPaths(tree)].sort(), ['R.md', 'docs/a.md']);
+  assert.equal(L.decodeMarkdownBytes(new TextEncoder().encode('# hi 中')).invalid, false);
+  const bad = L.decodeMarkdownBytes(new Uint8Array([0x23, 0x20, 0xff, 0xfe, 0x41]));
+  assert.equal(bad.invalid, true);
+  assert.ok(bad.text.includes('A'));
+});

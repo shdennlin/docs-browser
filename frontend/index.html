@@ -1,5 +1,28 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>docs-browser</title></head>
-<body><p>docs-browser (placeholder shell; the real frontend arrives in milestone M3)</p></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>docs-browser</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/vendor/highlight-github.min.css">
+</head>
+<body data-state="loading">
+  <div id="app">
+    <aside id="sidebar">
+      <div id="tree-banners"></div>
+      <nav id="tree" aria-label="Files"></nav>
+    </aside>
+    <main id="main">
+      <div id="banners"></div>
+      <div id="preview"></div>
+    </main>
+  </div>
+  <script src="/vendor/markdown-it.umd.min.js"></script>
+  <script src="/vendor/markdown-it-task-lists.min.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script src="/vendor/mermaid.min.js"></script>
+  <script src="/lib.js"></script>
+  <script src="/app.js"></script>
+</body>
 </html>

@@ -10,6 +10,7 @@
 | v1.4 | `/files/*` serves an **extension whitelist** only; visibility checked on both the requested and the canonical path and compared case-insensitively; one coherent symlink policy (followed, listed, watched, aliased); event pipeline rebuilt as *update state, then broadcast*; every acceptance criterion owned by exactly one milestone; unit tests separated from acceptance criteria; decisions D1 to D10 |
 | v1.4.1 (2026-11-24) | T-0.3 findings: `follow_symlinks(false)` is required on Linux, real-path events make `aliases` mandatory, ignored directories may still be watched (8.1); debouncer limits, directory detection, `Rescan` API (8.2); drop the watcher on any initial `watch()` error (8.5); new AC-57. Earlier in this revision, M0 measurements folded in: `style-src 'unsafe-inline'` is required by Mermaid (12.5); macOS `canonicalize` returns the on-disk case and APFS keeps the stored Unicode form (12.2); pinned crate versions, `rust-version`, package `exclude` (10.1); `/files//a` added to AC-20; Linux-specific variants for AC-28, AC-63, AC-68, AC-69 and a Linux-run recipe in 13 |
 | v1.4.2 (2026-11-24) | M1: directory scan uses `std::fs::read_dir`; `walkdir` removed (10.1, 10.3); resolver steps 3 and 7 clarified (lexical normalization, extension checked on listed name and canonical target, non-regular files denied) |
+| v1.4.4 (2026-11-24) | M3: frontend tests run as `node --test frontend/*.test.js` (Node 22 treats `node --test frontend/` as a file path, not a directory); client-side link classification uses the tree for Markdown/HTML targets and leaves dot-prefix visibility of assets to the server (6) |
 | v1.4.3 (2026-11-24) | CP-2: app-shell CSP gains `frame-ancestors 'none'` (12.5); every response, including the Host/Origin 403, carries the security headers (11); `/api/file` bounds the read itself and `/files/*` bounds the stream to the opened length (11); `tower-http` and `mime_guess` dropped (fixed MIME table, one header middleware); `rust-embed` needs its `include-exclude` feature to keep vendor bookkeeping files out of the binary (10.1) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
@@ -660,7 +661,7 @@ site/
 | AC-14a | M2 | §7.2 cap header | Generate 60,000 `.md` files in a temp root; `curl -sI $BASE/api/tree` | `x-tree-truncated: 1` |
 | AC-14b | M3 | §7.2 cap UI | Same root in the browser | Shows "Tree truncated" |
 | AC-15 | M3 | §6 UTF-8 | Browser `/?file=docs/utf8-bad.md` | Page renders with the banner "File contained invalid UTF-8" |
-| AC-16 | M3 | §6 slugs | `node --test frontend/` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
+| AC-16 | M3 | §6 slugs | `node --test frontend/*.test.js` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security

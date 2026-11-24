@@ -469,12 +469,78 @@ def ac_36(ctx):
     return status == 404 and "public" not in names, f"status={status} public_listed={'public' in names}"
 
 
+# ---------------------------------------------------------------- M3
+CHROME_DEFAULT = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+BROWSER_IDS = ["AC-03b", "AC-04", "AC-05", "AC-06", "AC-07b", "AC-09", "AC-10", "AC-12b",
+               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42"]
+
+
+def run_browser(ctx, base, ids):
+    """Runs tests/browser.mjs once and returns {id: (ok, note)}."""
+    chrome = ctx.get("chrome") or os.environ.get("CHROME_BIN") or CHROME_DEFAULT
+    if shutil.which("node") is None:
+        raise Skip("node not found")
+    if not os.path.exists(chrome):
+        raise Skip(f"Chrome not found at {chrome}")
+    r = sh(["node", "tests/browser.mjs", "--base", base, "--chrome", chrome, "--ids", ",".join(ids)], cwd=ROOT)
+    try:
+        rows = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise RuntimeError("browser.mjs produced no JSON: " + (r.stderr or r.stdout)[-300:])
+    return {row["id"]: (row["ok"], row["note"]) for row in rows}
+
+
+def browser_check(ctx, ac_id):
+    if "browser" not in ctx:
+        server(ctx)
+        ctx["browser"] = run_browser(ctx, f"http://127.0.0.1:{PORT}", BROWSER_IDS)
+    return ctx["browser"][ac_id]
+
+
+def _make_browser_ac(ac_id):
+    def fn(ctx):
+        return browser_check(ctx, ac_id)
+    fn.__name__ = "ac_" + ac_id.lower().replace("-", "_")
+    return fn
+
+
+for _id in BROWSER_IDS:
+    REGISTRY[_id] = _make_browser_ac(_id)
+
+
+@ac("AC-14b")
+def ac_14b(ctx):
+    root = tempfile.mkdtemp(prefix="docs-browser-big-")
+    try:
+        for d in range(60):
+            os.makedirs(os.path.join(root, f"d{d:02d}"))
+            for i in range(1000):
+                with open(os.path.join(root, f"d{d:02d}", f"f{i:04d}.md"), "w") as f:
+                    f.write("# f\n")
+        with Server(ctx["bin"], root, PORT_BIG):
+            res = run_browser(ctx, f"http://127.0.0.1:{PORT_BIG}", ["AC-14b"])
+        return res["AC-14b"]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+@ac("AC-16")
+def ac_16(ctx):
+    if shutil.which("node") is None:
+        raise Skip("node not found")
+    r = sh("node --test frontend/*.test.js", cwd=ROOT)
+    ok = r.returncode == 0 and "ok 1 - ac_16 slugs follow the GitHub rules" in r.stdout
+    tests = re.search(r"# pass (\d+)", r.stdout)
+    return ok, f"node --test: exit={r.returncode} pass={tests.group(1) if tests else '?'}"
+
+
 # ---------------------------------------------------------------- driver
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--milestone", default="all")
     p.add_argument("--platform", default=sys.platform)
     p.add_argument("--bin", default=os.path.join(ROOT, "target", "release", "docs-browser"))
+    p.add_argument("--chrome", default=None, help="Chrome binary for the browser checks")
     args = p.parse_args()
 
     if not os.path.exists(FIXTURE_SITE):
@@ -482,7 +548,7 @@ def main():
     if not os.path.exists(args.bin):
         if args.bin == os.path.join(ROOT, "target", "release", "docs-browser"):
             sh(["cargo", "build", "--release", "--quiet"], cwd=ROOT)
-    ctx = {"bin": args.bin, "platform": args.platform, "servers": {}}
+    ctx = {"bin": args.bin, "platform": args.platform, "servers": {}, "chrome": args.chrome}
     atexit.register(lambda: [s.stop() for s in ctx["servers"].values()])
     rows = prd_rows()
     sel = [(i, m) for i, m in rows if args.milestone in ("all", m)]

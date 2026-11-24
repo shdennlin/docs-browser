@@ -50,3 +50,15 @@ Tracks PRD section 16 tasks and evidence. Run `python3 tests/suite.py` for the l
 | Mutation checks | done | removing: sandbox CSP, Host allowlist, Origin check, 5 MiB cap, 415 mapping, nosniff each fails exactly its AC |
 | Platforms | done | macOS (rustc 1.95.0) and Linux uid 1000 in Docker (rustc 1.100.0, no lsof): 24/24 |
 | CP-2 checkpoint | done | `/reviewer:result` run 20261124T063348Z-gBTz3g: FAIL on first pass (1 high, 2 medium, 5 low; 8 verified, 0 refuted). HIGH = my own regression: a slice edit deleted `cargo_unit_test` from tests/suite.py so UT rows crashed (reproduced, restored). MEDIUM: `/api/file` read now bounded with `take(MAX+1)`; header middleware moved outermost so the Host/Origin 403 carries security headers. LOW: `frame-ancestors 'none'` added, `/files` stream bounded to the opened length, boundary tests added (exactly 5 MiB = 200, +1 byte = 413; tree cap counts ~50,000 files and the normal tree is not marked truncated). Symlink-swap race left as is: accepted risk R9 in the PRD. Mutation checks for the fixes pass. |
+
+## M3 (work done, CP-3 NOT yet run)
+
+| Task | Status | Evidence |
+|---|---|---|
+| T-3.1 lib.js | done | `node --test frontend/*.test.js`: 7 pass (AC-16) |
+| T-3.2a/b/c, T-3.3 frontend | done | 16 M3 criteria PASS on macOS (Chrome, headless, CDP) via `python3 tests/suite.py --milestone M3`; 15 of them PASS against a Linux container server via `tests/linux-browser.sh` (AC-16 is node only) |
+| T-3.4 headless Chrome script | done | `tests/browser.mjs` (no extra packages) |
+| Mutation checks | done | 9 frontend mutations each fail exactly their AC |
+| CP-3 checkpoint | pending | run `python3 tests/milestone-spec.py M3`, `git add -N` new files, then `/reviewer:result` |
+
+Docker leftovers to remove when finished: volumes `docs-browser-cargo` and `docs-browser-target`.
