@@ -199,6 +199,7 @@
       var a = document.createElement('a');
       a.href = L.buildUrl(r.path, '');
       a.dataset.path = r.path;
+      a.title = r.path;
       var badge = document.createElement('span');
       var isHtml = /\.html?$/i.test(r.path);
       badge.className = 'badge ' + (isHtml ? 'html' : 'md');
@@ -251,6 +252,7 @@
         var nameSpan = document.createElement('span');
         nameSpan.className = 'folder-name';
         nameSpan.textContent = e.name;
+        nameSpan.title = dirPath;
         summary.appendChild(nameSpan);
         [['expand', '\u229E', 'Open this folder and everything in it'], ['collapse', '\u229F', 'Close this folder and everything in it']].forEach(function (b) {
           var btn = document.createElement('button');
@@ -275,6 +277,7 @@
         var a = document.createElement('a');
         a.href = L.buildUrl(e.path, '');
         a.dataset.path = e.path;
+        a.title = e.path;
         var badge = document.createElement('span');
         var isHtml = /\.html?$/i.test(e.name);
         badge.className = 'badge ' + (isHtml ? 'html' : 'md');
@@ -751,6 +754,7 @@
   function setWrap(on, save) {
     $('#sidebar').classList.toggle('nowrap', !on);
     wrapBtn.setAttribute('aria-pressed', String(on));
+    wrapBtn.title = on ? 'Long names wrap (click: one line, cut with \u2026)' : 'One line per name, cut with \u2026 (click: wrap)';
     var cw = $('#set-wrap'); if (cw) cw.checked = on;
     if (save) { try { localStorage.setItem(WRAP_KEY, on ? '1' : '0'); } catch (e) { /* storage may be off */ } }
   }
@@ -872,6 +876,7 @@
       a.className = 'result';
       a.href = L.buildUrl(r.path, '');
       a.dataset.path = r.path;
+      a.title = r.path;
       var head = document.createElement('div');
       head.className = 'result-path';
       head.textContent = r.path;
