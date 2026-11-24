@@ -84,3 +84,17 @@ test('collectPaths and decodeMarkdownBytes', () => {
   assert.equal(bad.invalid, true);
   assert.ok(bad.text.includes('A'));
 });
+
+test('sidebar width is clamped to 180 px .. 60% of the window and stored values are validated', () => {
+  assert.equal(L.clampSidebarWidth(300, 1280), 300);
+  assert.equal(L.clampSidebarWidth(5, 1280), 180);
+  assert.equal(L.clampSidebarWidth(5000, 1280), 768);
+  assert.equal(L.clampSidebarWidth(500, 400), 240); // 60% of 400
+  assert.equal(L.clampSidebarWidth(500, 200), 180); // the minimum wins in a tiny window
+  assert.equal(L.clampSidebarWidth(NaN, 1280), 300);
+  assert.equal(L.clampSidebarWidth('420.4', 1280), 420);
+  assert.equal(L.parseStoredWidth('420'), 420);
+  for (const bad of [null, undefined, '', 'abc', '-5', '12.5', '99999', '1e3', '0x10', ' ']) {
+    assert.equal(L.parseStoredWidth(bad), null, String(bad));
+  }
+});

@@ -47,6 +47,8 @@ docs-browser [OPTIONS] [DIRECTORY]
 - Only Markdown (`.md`, `.markdown`) and HTML (`.htm`, `.html`) files are listed. A page can also load the
   CSS, JavaScript, images and fonts next to it. Nothing else is served.
 - `/?file=docs/architecture.md#section` opens a file directly; the address bar always shows the current file.
+- Drag the divider between the list and the preview to change the width of the list (keyboard: focus the
+  divider, then Left, Right or Home; double click resets it). The width is remembered by the browser.
 
 ## Security model
 

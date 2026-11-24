@@ -182,7 +182,28 @@
     }
   }
 
+  // ---------------------------------------------------------------- sidebar width (PRD 5)
+  var SIDEBAR_DEFAULT = 300;
+  var SIDEBAR_MIN = 180;
+
+  // The width is kept between 180 px and 60% of the window (never below 180 px, even in a tiny window).
+  function clampSidebarWidth(px, viewportWidth) {
+    var max = Math.max(SIDEBAR_MIN, Math.floor(Number(viewportWidth) * 0.6));
+    var n = Math.round(Number(px));
+    if (!isFinite(n)) n = SIDEBAR_DEFAULT;
+    return Math.min(max, Math.max(SIDEBAR_MIN, n));
+  }
+
+  // A stored value is trusted only if it is a plain integer of two to four digits.
+  function parseStoredWidth(value) {
+    if (value === null || value === undefined) return null;
+    var s = String(value).trim();
+    return /^\d{2,4}$/.test(s) ? Number(s) : null;
+  }
+
   return {
+    SIDEBAR_DEFAULT: SIDEBAR_DEFAULT, SIDEBAR_MIN: SIDEBAR_MIN,
+    clampSidebarWidth: clampSidebarWidth, parseStoredWidth: parseStoredWidth,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
     slugify: slugify, makeSlugger: makeSlugger,
     encodePath: encodePath, resolveRelative: resolveRelative, classifyLink: classifyLink,

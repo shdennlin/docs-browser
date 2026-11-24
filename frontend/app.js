@@ -452,6 +452,60 @@
     };
   }
 
+  // ------------------------------------------------------------ sidebar resizer (PRD 5)
+  var SIDEBAR_KEY = 'docs-browser.sidebarWidth';
+  var resizer = $('#resizer');
+  var sidebarWidth = L.SIDEBAR_DEFAULT;
+
+  function applySidebar(px, save) {
+    sidebarWidth = L.clampSidebarWidth(px, window.innerWidth);
+    document.documentElement.style.setProperty('--side', sidebarWidth + 'px');
+    resizer.setAttribute('aria-valuenow', String(sidebarWidth));
+    resizer.setAttribute('aria-valuemin', String(L.SIDEBAR_MIN));
+    resizer.setAttribute('aria-valuemax', String(L.clampSidebarWidth(1e6, window.innerWidth)));
+    if (save) {
+      try { localStorage.setItem(SIDEBAR_KEY, String(sidebarWidth)); } catch (e) { /* storage may be off */ }
+    }
+  }
+
+  function endDrag(e) {
+    if (!resizer.dataset.dragging) return;
+    delete resizer.dataset.dragging;
+    document.body.classList.remove('resizing');
+    try { resizer.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+    applySidebar(sidebarWidth, true);
+  }
+
+  resizer.addEventListener('pointerdown', function (e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    resizer.setPointerCapture(e.pointerId); // keep receiving moves over the preview iframe
+    resizer.dataset.dragging = '1';
+    document.body.classList.add('resizing');
+  });
+  resizer.addEventListener('pointermove', function (e) {
+    if (!resizer.dataset.dragging) return;
+    applySidebar(e.clientX - $('#app').getBoundingClientRect().left, false);
+  });
+  resizer.addEventListener('pointerup', endDrag);
+  resizer.addEventListener('pointercancel', endDrag);
+  resizer.addEventListener('dblclick', function () { applySidebar(L.SIDEBAR_DEFAULT, true); });
+  resizer.addEventListener('keydown', function (e) {
+    var step = e.shiftKey ? 48 : 16;
+    if (e.key === 'ArrowLeft') applySidebar(sidebarWidth - step, true);
+    else if (e.key === 'ArrowRight') applySidebar(sidebarWidth + step, true);
+    else if (e.key === 'Home') applySidebar(L.SIDEBAR_DEFAULT, true);
+    else return;
+    e.preventDefault();
+  });
+  window.addEventListener('resize', function () { applySidebar(sidebarWidth, false); });
+
+  (function restoreSidebar() {
+    var saved = null;
+    try { saved = L.parseStoredWidth(localStorage.getItem(SIDEBAR_KEY)); } catch (e) { /* storage may be off */ }
+    applySidebar(saved === null ? L.SIDEBAR_DEFAULT : saved, false);
+  })();
+
   // ------------------------------------------------------------ start
   (async function start() {
     connectLive(); // before the first fetch: nothing that changes from here on can be missed

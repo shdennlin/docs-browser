@@ -160,6 +160,13 @@ async function openPage(cdp, url, { waitReady = true, base = BASE, fakeEventSour
       return r.result.value;
     },
     async goto(u) { await s('Page.navigate', { url: base + u }); },
+    async mouse(type, x, y, extra = {}) {
+      await s('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1, ...extra });
+    },
+    async key(key, code, vk) {
+      await s('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk });
+      await s('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
+    },
     async ready(timeout = 10000) {
       return waitFor(() => page.ev("document.body && document.body.dataset.state === 'ready'"), timeout);
     },
@@ -343,6 +350,52 @@ checks['AC-42'] = async (cdp) => {
   return [!!(r && r.inView && r.mainScroll > 0) && after === 0, JSON.stringify({ anchor: r, scrollAfterNavigation: after })];
 };
 
+
+checks['AC-70'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=README.md');
+  const width = () => p.ev("Math.round(document.getElementById('sidebar').getBoundingClientRect().width)");
+  const handle = () => p.ev("(function(){var r=document.getElementById('resizer').getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + 200};})()");
+  const dragTo = async (toX) => {
+    const h = await handle();
+    await p.mouse('mousePressed', h.x, h.y);
+    for (const x of [h.x + (toX - h.x) / 2, toX]) await p.mouse('mouseMoved', x, h.y);
+    await p.mouse('mouseReleased', toX, h.y);
+    return width();
+  };
+  const out = {};
+  try {
+    out.start = await width();
+    out.afterDrag = await dragTo((await handle()).x + 120);
+    out.stored = await p.ev("localStorage.getItem('docs-browser.sidebarWidth')");
+    await p.ev('location.reload(); true');
+    await sleep(300);
+    await p.ready();
+    out.afterReload = await width();
+    out.tooWide = await dragTo(1270);   // 60% of the 1280 px test window is 768
+    out.tooNarrow = await dragTo(5);    // the minimum is 180
+    const h = await handle();
+    for (const n of [1, 2]) {           // two clicks: a double click resets the width
+      await p.mouse('mousePressed', h.x, h.y, { clickCount: n });
+      await p.mouse('mouseReleased', h.x, h.y, { clickCount: n });
+    }
+    await sleep(100);
+    out.afterDoubleClick = await width();
+    await p.ev("document.getElementById('resizer').focus(); true");
+    await p.key('ArrowRight', 'ArrowRight', 39);
+    out.keyRight = await width();
+    await p.key('ArrowLeft', 'ArrowLeft', 37);
+    out.keyLeft = await width();
+    out.aria = await p.ev("(function(){var r=document.getElementById('resizer'); return [r.getAttribute('aria-valuemin'), r.getAttribute('aria-valuenow'), r.getAttribute('aria-valuemax')].join('/');})()");
+  } finally {
+    await p.ev("localStorage.removeItem('docs-browser.sidebarWidth'); true");
+    await p.close();
+  }
+  const near = (a, b, d = 2) => Math.abs(a - b) <= d;
+  const ok = near(out.start, 300) && near(out.afterDrag, 420, 3) && out.stored === String(out.afterDrag)
+    && near(out.afterReload, out.afterDrag, 1) && out.tooWide >= 760 && out.tooWide <= 768 && out.tooNarrow === 180
+    && out.afterDoubleClick === 300 && out.keyRight === 316 && out.keyLeft === 300 && out.aria === '180/300/768';
+  return [ok, JSON.stringify(out)];
+};
 
 // ---------------------------------------------------------------- live reload (M4)
 const READY = "document.body.dataset.state === 'ready'";

@@ -2,8 +2,8 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; }
-#app { display: grid; grid-template-columns: var(--side) 1fr; height: 100%; }
-#sidebar { border-right: 1px solid var(--border); overflow: auto; padding: 8px 4px 24px 8px; font-size: 14px; }
+#app { display: grid; grid-template-columns: var(--side) 6px 1fr; height: 100%; }
+#sidebar { overflow: auto; padding: 8px 4px 24px 8px; font-size: 14px; }
 #main { overflow: auto; padding: 16px 28px 48px; }
 #tree ul { list-style: none; margin: 0; padding-left: 14px; }
 #tree > ul { padding-left: 2px; }
@@ -35,3 +35,7 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 .mermaid { margin: 12px 0; text-align: center; }
 [hidden] { display: none !important; }
 #live-status { position: sticky; top: 0; z-index: 2; background: #bf8700cc; color: #fff; }
+#resizer { cursor: col-resize; touch-action: none; background: linear-gradient(to right, transparent 2px, var(--border) 2px, var(--border) 3px, transparent 3px); }
+#resizer:hover, #resizer:focus-visible, body.resizing #resizer { background: linear-gradient(to right, transparent 1px, var(--accent) 1px, var(--accent) 4px, transparent 4px); outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing iframe { pointer-events: none; }

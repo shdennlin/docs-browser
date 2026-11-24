@@ -491,7 +491,7 @@ def ac_36(ctx):
 # ---------------------------------------------------------------- M3
 CHROME_DEFAULT = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IDS = ["AC-03b", "AC-04", "AC-05", "AC-06", "AC-07b", "AC-09", "AC-10", "AC-12b",
-               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42"]
+               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70"]
 
 
 def run_browser(ctx, base, ids):

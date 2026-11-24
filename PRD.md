@@ -21,6 +21,7 @@
 | v1.4.11 (2026-11-24) | D11, approved by the user: `Origin: null` is accepted for GET and HEAD on `/files/*` only, because Chromium 156 sends it for the assets of a sandboxed HTML preview and the strict rule broke them; found only when the suite ran with Chromium inside the Linux container (12.1, 15, AC-26a, AC-26b) |
 | v1.4.12 (2026-11-24) | AC-45 also runs two interleavings deterministically, with the test delivering `changed`, `removed` and `tree` events itself through a fake EventSource: a pending re-render must not overwrite "no longer exists", and a 404 must mark the file missing so a later `tree` event restores it (8.4, 8.5) |
 | v1.4.13 (2026-11-24) | Final whole-project review: the release profile of 10.1 is now in `Cargo.toml`; unused `anyhow` and `tokio-stream` removed; a literal `+` in `?file=` stays a plus (5); folders the user closed are not re-opened by a tree update, ancestors open on navigation only (5); a rescan runs once the watcher is registered, so changes during the first scan are not lost (8.1); only an `http://` origin counts as same-origin (12.1); watcher and rebuild error text is escaped (9.3); release 0.1.2 carries D11 |
+| v1.4.14 (2026-11-24) | Resizable sidebar added on request: drag, keyboard, double click, 180 px to 60% limits, remembered in `localStorage` (5, AC-70, T-3.5) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -162,6 +163,10 @@ docs-browser ./docs --port 8080
 ```
 
 Clicking a file updates the preview without reloading the entire application.
+
+### Sidebar width
+
+The width of the file list can be changed by dragging the divider between the list and the preview (mouse or touch). The divider is also a keyboard control: focus it, then Left and Right change the width by 16 px (48 px with Shift) and Home restores the default. A double click restores the default of 300 px. The width stays between 180 px and 60% of the window, even when the window is resized, and is remembered in the browser's `localStorage` (key `docs-browser.sidebarWidth`; a stored value that is not a plain integer is ignored). While dragging, the preview iframe cannot swallow the mouse. Added after the first release plan, on request, 2026-11-24 (AC-70, T-3.5).
 
 ### Deep-link behaviour
 
@@ -673,6 +678,7 @@ site/
 | AC-14b | M3 | §7.2 cap UI | Same root in the browser | Shows "Tree truncated" |
 | AC-15 | M3 | §6 UTF-8 | Browser `/?file=docs/utf8-bad.md` | Page renders with the banner "File contained invalid UTF-8" |
 | AC-16 | M3 | §6 slugs | `node --test frontend/*.test.js` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
+| AC-70 | M3 | §5 sidebar width | Browser, in a 1280 px window: drag the divider 120 px to the right, reload, drag far right and far left, double click the divider, then focus it and press Right and Left | The width goes 300 to about 420 (stored in `localStorage` and still about 420 after the reload); far right stops at 768 (60% of the window), far left at 180; the double click gives 300; Right gives 316 and Left gives 300; `aria-valuemin/now/max` read `180/300/768` |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -765,6 +771,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | Requirement | Checked by |
 |---|---|
 | §3 goals 1 to 8 | AC-01, AC-02, AC-03b, AC-04, AC-06, AC-43, AC-40 |
+| §5 sidebar width | AC-70 |
 | §6 Markdown, links, images, UTF-8, slugs | AC-03a/b, AC-09, AC-10, AC-15, AC-16, AC-17 |
 | §6 Mermaid and error box | AC-04, AC-05 |
 | §6, §12.4 HTML isolation | AC-06, AC-07a/b |
@@ -872,6 +879,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.2b | Mermaid with error box | T-3.2a, T-0.4 | AC-04, AC-05 |
 | T-3.2c | HTML iframe preview and the top-level check | T-3.2a | AC-06, AC-07b |
 | T-3.3 | Deep links, history, anchors, not-found, size and truncation states | T-3.2a | AC-12b, AC-14b, AC-40, AC-41, AC-42 |
+| T-3.5 | Resizable sidebar (added after M5, on request): divider, drag, keyboard, double click, limits, `localStorage` | T-3.2a | AC-70 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 
