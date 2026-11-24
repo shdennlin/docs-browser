@@ -45,6 +45,7 @@
 | v1.4.35 (2026-11-25) | Full-screen Mermaid viewer: a button on every diagram opens it over the page; drag pans, the wheel zooms around the pointer, `Esc` closes (7.4; AC-85) |
 | v1.4.36 (2026-11-25) | Release 0.2.0: includes v1.4.34 (dark Mermaid accents) and v1.4.35 (full-screen Mermaid viewer) on top of 0.1.4, plus the README screenshots and the demo docs; `Cargo.toml` and the README install tag updated |
 | v1.4.37 (2026-11-25) | The running server's version is shown at the right end of the bar at the bottom of the file list, from the new `GET /api/version` (7.3, 11; AC-86); the README install command uses the real GitHub URL |
+| v1.4.38 (2026-11-25) | A status bar under the preview shows the created and modified times and, inside a git repository, the branch, the last commit of the file and whether it has uncommitted changes, from the new `GET /api/info` (7.3, 11; AC-87, UT-19, UT-20); the diagram's full-screen button is a text glyph instead of an `<svg>` (7.4; fixes AC-04); AC-71 follows the dark accents |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -317,6 +318,7 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 - The wrap button switches long names between wrapping and one line per name shown in full (the list then scrolls sideways). Selecting a file only scrolls the list vertically, never sideways. The search box and the buttons are outside the scrolling part, so they stay in place however far the list is scrolled sideways; the outer panel snaps back to 0 if a browser scrolls it. In a very narrow list (180 px) the buttons wrap onto a second line. Every file and folder has a tooltip with its full path. The folder icon buttons sit right after the folder name, not at the right edge.
 - Each folder has a small icon, closed or open.
 
+- **File information:** a thin bar under the preview (hidden while no file is open) shows `Created <date time>` and `Modified <n minutes ago>` (the tooltip is the full time) and, at the right, for a file inside a git repository: `⎇ <branch>`, `Committed <ago> · <short hash>` with the commit subject, or `Not committed yet`, and `● uncommitted changes` when the file differs from its last commit. `Created` is the file system's birth time and is left out where it is not available; it is the time the file appeared on this computer, so a freshly cloned or synced file shows that day, not the day it was written. The bar is filled again after every reload caused by a change on disk. It appears for Markdown and HTML pages alike.
 - **Version:** the bar at the bottom of the file list shows `v` and the version of the running server (for example `v0.2.0`) at its right end, in small muted text; the tooltip is `docs-browser v0.2.0`. It comes from `GET /api/version`, so after an upgrade a page left open shows the new number only once it is reloaded.
 
 ### 7.4 Outline and settings
@@ -326,7 +328,7 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button in the bar at the bottom of the file list opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
-- **Full-screen diagram:** every rendered Mermaid diagram has a small `⤢` button at its top right (dimmed, full strength on hover or focus). It opens a copy of the diagram over the whole page, fitted to the window (at most 400 %). Dragging with the left mouse button pans; the mouse wheel (or a trackpad pinch) zooms around the pointer, so the point under the pointer stays under it; the zoom stays between 5 % and 2000 %. A bar at the top right has `−`, the zoom level, `+`, `Fit` and `×`; a double click and the key `0` also fit, `+` and `-` zoom. `Esc` or `×` closes it; while it is open the other page shortcuts are ignored. Diagrams that failed to render have no button. The copy keeps the diagram's colours.
+- **Full-screen diagram:** every rendered Mermaid diagram has a small `⤢` button (a text glyph, so that a diagram stays the only `<svg>` in its block) at its top right (dimmed, full strength on hover or focus). It opens a copy of the diagram over the whole page, fitted to the window (at most 400 %). Dragging with the left mouse button pans; the mouse wheel (or a trackpad pinch) zooms around the pointer, so the point under the pointer stays under it; the zoom stays between 5 % and 2000 %. A bar at the top right has `−`, the zoom level, `+`, `Fit` and `×`; a double click and the key `0` also fit, `+` and `-` zoom. `Esc` or `×` closes it; while it is open the other page shortcuts are ignored. Diagrams that failed to render have no button. The copy keeps the diagram's colours.
 
 The server searches on demand, with no index. It walks the listed `.md`, `.markdown`, `.html` and `.htm` files, resolving every one through the resolver (§12.2) with the `/files/*` rules, so hidden folders, the ignore list, out-of-root symlinks and other extensions are never searched. A file reachable through several in-root symlinks is searched once, under its first listed path. Matching is a plain substring test per line, ignoring ASCII case (other letters are matched exactly). HTML is searched by its text with the tags removed. Limits: query 2 to 200 characters, files over 5 MiB skipped, at most 100 result files, 3 lines per file, 256 MiB read per search; hitting a limit sets `truncated`.
 
@@ -597,6 +599,14 @@ GET /api/version
 
 Returns `200` with `{ "version": "0.2.0" }`, the version in `Cargo.toml` that the running binary was built from. The Host and Origin rules (§12.1) apply as for every other route.
 
+### File information
+
+```http
+GET /api/info?path=docs/architecture.md
+```
+
+The path is resolved with the `/files/*` rules (§12.2), so hidden folders, the ignore list, out-of-root symlinks and directories answer `404`. Returns `200` with `{ "size", "modified", "created", "git" }`: times are milliseconds since the Unix epoch, `created` is the birth time and is `null` where the platform does not record it, `git` is `null` outside a repository, otherwise `{ "branch", "commit", "dirty" }` with `commit` either `null` (never committed) or `{ "hash", "time", "subject" }` (seconds, subject cut to 200 characters; no author or e-mail). `branch` is the short hash on a detached HEAD. Git is optional: the server runs `git` with a 2 second limit, without a terminal prompt or optional locks; when git is missing, slow or failing the `git` part is `null`.
+
 ### Deep-link route
 
 ```http
@@ -755,7 +765,7 @@ site/
 | AC-15 | M3 | §6 UTF-8 | Browser `/?file=docs/utf8-bad.md` | Page renders with the banner "File contained invalid UTF-8" |
 | AC-16 | M3 | §6 slugs | `node --test frontend/*.test.js` slug cases: `Data Flow` → `data-flow`, duplicate `Intro` → `intro`, `intro-1`, `中文 標題` keeps CJK | All pass |
 | AC-70 | M3 | §5 sidebar width | Browser, in a 1280 px window: drag the divider 120 px to the right (and release the pointer capture without a pointerup, then move the mouse once), reload, drag far right and far left; seed `localStorage` with `5000`, `12`, ` 420 ` and `abc`; seed `600`, shrink the window to 800 px and grow it back; double click the divider; focus it and press Right and Left | 300 becomes exactly 420 (stored, and 420 after the reload) and `body.resizing` is cleared after the lost capture; far right gives 768 (60% of the window), far left 180; the seeded values give 768, 180, 300 and 300; 600 becomes 480 in the 800 px window and 600 again afterwards; the double click gives 300; `aria-valuemin/now/max` read `180/300/768`; Right gives 316 and Left gives 300 |
-| AC-71 | M3 | §6 theme | Browser in dark mode `/?file=docs/code.md` then `docs/architecture.md`; then in light mode | Dark: body `rgb(40, 42, 54)` on text `rgb(248, 248, 242)`, h1 `rgb(255, 85, 85)`, h2 `rgb(255, 184, 108)`, links `rgb(139, 233, 253)`, a highlighted keyword in another colour than the text, Mermaid nodes `rgb(68, 71, 90)` and lines `rgb(139, 233, 253)`; light: white background and h1 the same colour as the text |
+| AC-71 | M3 | §6 theme | Browser in dark mode `/?file=docs/code.md` then `docs/architecture.md`; then in light mode | Dark: body `rgb(40, 42, 54)` on text `rgb(248, 248, 242)`, h1 `rgb(255, 85, 85)`, h2 `rgb(255, 184, 108)`, links `rgb(139, 233, 253)`, a highlighted keyword in another colour than the text, the first Mermaid node the purple accent tint `rgb(76, 67, 101)` (§7.4, AC-84) and lines `rgb(139, 233, 253)`; light: white background and h1 the same colour as the text |
 | AC-72 | M3 | §7.3 badges, expand/collapse | Browser `/`: read the badges, click `Collapse all`, `Expand all`, `Collapse all` | `README.md` and Markdown files read `MD`, `docs/flow.html` reads `HTML`; the open folders go to 0, to all of them, to 0; the expand-all, collapse-all and both folder buttons hold an SVG and no text, the SVG lines are drawn in the button's text colour (differs between light and dark mode), expand and collapse use different drawings and the folder buttons use the same two as the toolbar |
 | AC-73 | M3 | §7.3 fuzzy file name search | Browser: type `arcmd`, `mda`, `docs flow`, `zzzz-nothing`, clear, `srch-tar` and click the result; press `/` | `arcmd` lists `docs/architecture.md` first as a flat list with the full path, an `MD` badge and the matched letters marked; `mda` and `zzzz-nothing` give "No file name matches"; `docs flow` lists `docs/flow.html` first; clearing brings the tree back with the folders closed; the click opens `Search target`; the box has focus after `/` |
 | AC-74 | M3 | §7.3, §11 content search | Browser, `Contents` switch: type `x`, `ZEBRA-needle`, click the result, type a text nobody has; `fetch('/api/search?q=a')`, `fetch('/api/search?q=hidden')` | "at least 2 characters"; one result `docs/search-target.md`, line `3:`, hit `zebra-needle`, tree hidden; the preview opens and the URL is `?file=docs/search-target.md`; "No file contains"; status `400`; nothing from `.hidden/` |
@@ -771,6 +781,7 @@ site/
 | AC-84 | M3 | §7.4 Mermaid colours | Browser `docs/palette.md` (a flowchart with three plain nodes and one `style` node, and a three-participant sequence diagram) in dark and in light mode | Dark: the three plain nodes have three different fills; the `style` node keeps its own fill; each participant has one fill and border colour on both its top and bottom box, different from the other participants; every node text has contrast >= 4.5. Light: plain nodes keep the single theme fill; participants keep the theme's own distinct colours |
 | AC-85 | M3 | §7.4 full-screen diagram | Browser `docs/palette.md` (two diagrams): click the button of the first; wheel up at a point, wheel down, 40 wheel-ups, 80 wheel-downs; `Fit`; drag by (120, -80) px; keys `+`, `0`, `d`, `Escape`; open the second, click `×` | There is one button per diagram and the viewer is closed at first; it opens with the whole diagram inside the window; the zoom grows on wheel up and the diagram point under the pointer does not move (within 1 % of the size); it shrinks on wheel down; it never exceeds 2000 % nor goes below 5 %; `Fit` restores the first zoom; the drag moves the diagram by the same distance without changing its size; `+` zooms, `0` fits, `d` does not switch the theme; `Escape` closes and empties the viewer; the second diagram opens its own copy (3 participants) and `×` closes it |
 | AC-86 | M3 | §7.3, §11 version | Browser `/?file=README.md`: read the footer's version text and its position; `fetch('/api/version')`; the version in `Cargo.toml` | The text is `v` plus the API's version, which equals the `Cargo.toml` version and has the form `x.y.z`; the text lies inside the bottom bar, to the right of the settings button |
+| AC-87 | M3 | §7.3, §11 file information | Browser: `/` (no file), `repo-demo/a.md` (committed in a repository on branch `trunk`), `repo-demo/b.md` (untracked), `docs/flow.html`; then edit `repo-demo/b.md` on disk; `fetch('/api/info?path=...')` for `.hidden/x`, `link-out/passwd`, `../x`, `docs` | No bar without a file; for `a.md` the bar lies under the preview with `Modified`, `trunk`, `Committed … ago`, the commit subject and no uncommitted mark; for `b.md` `Not committed yet` and the uncommitted mark; the HTML page has the bar too; the modified time changes after the edit; the four other paths answer `404` |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -857,6 +868,8 @@ site/
 | UT-16 | M4 | Rebuild failure | Previous tree kept; no `tree` event; next event retries |
 | UT-17 | M3 | Content search | Finds text in visible Markdown and HTML only (tags ignored, ASCII case folded, ignore list, hidden folders, other extensions, symlinks once, out-of-root and oversized files skipped); snippets cut on character boundaries |
 | UT-18 | M3 | Search query and limits | Query under 2 and over 200 characters refused, trimmed otherwise; 100 files then `truncated` |
+| UT-19 | M3 | File information, plain folder | A file outside any repository has size, modified time and no `git`; a directory and a missing path give nothing |
+| UT-20 | M3 | File information, repository | In a fresh repository on branch `trunk`: an untracked file shows the branch, no commit and `dirty`; after a commit it shows the commit subject, a time and not `dirty`; an edit makes it `dirty` again |
 
 Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
 
@@ -882,6 +895,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.4 Mermaid colours (dark) | AC-84 |
 | §7.4 full-screen diagram | AC-85 |
 | §7.3, §11 version display | AC-86 |
+| §7.3, §11 file information | AC-87, UT-19, UT-20 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -996,6 +1010,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.14 | Dark Mermaid: a distinct Dracula accent per plain node and per participant (added on request) | T-3.13 | AC-84 |
 | T-3.15 | Full-screen Mermaid viewer with drag and wheel zoom (added on request) | T-3.14 | AC-85 |
 | T-3.16 | Version in the footer and `GET /api/version` (added on request) | T-3.15 | AC-86 |
+| T-3.17 | File information status bar and `GET /api/info` (times and optional git facts, added on request) | T-3.16 | AC-87, UT-19, UT-20 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

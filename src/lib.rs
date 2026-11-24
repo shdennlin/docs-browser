@@ -10,6 +10,7 @@ macro_rules! elog {
     }};
 }
 
+pub mod info;
 pub mod resolve;
 pub mod search;
 pub mod server;

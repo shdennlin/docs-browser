@@ -644,7 +644,7 @@ checks['AC-71'] = async (cdp) => {
     const want = { bg: 'rgb(40, 42, 54)', fg: 'rgb(248, 248, 242)', h1: 'rgb(255, 85, 85)', h2: 'rgb(255, 184, 108)', link: 'rgb(139, 233, 253)' };
     const ok = dark.bg === want.bg && dark.fg === want.fg && dark.h1 === want.h1 && dark.h2 === want.h2 && dark.link === want.link
       && dark.kw !== null && dark.kw !== dark.fg
-      && mer === 'rgb(68, 71, 90)' && edge === 'rgb(139, 233, 253)'
+      && mer === 'rgb(76, 67, 101)' /* first plain node: the purple accent tint (AC-84) */ && edge === 'rgb(139, 233, 253)'
       && light.bg !== want.bg && light.h1 === light.fg;
     return [ok, JSON.stringify({ dark, mer, edge, light })];
   } finally { await p.close(); }
@@ -969,6 +969,8 @@ checks['AC-80'] = async (cdp) => {
         out[name]={fill:fill.join(','),text:txt.join(','),ratio:Math.round(ratio(fill,txt)*10)/10};
       });
       return out})()`);
+    await p.goto('/'); await p.ready();
+    await q("localStorage.removeItem('docs-browser.theme'); true"); // an earlier check may have saved a choice
     const rendered = async (scheme) => {
       await p.media(scheme);
       await p.goto('/?file=docs/contrast.md'); await p.ready();
@@ -1007,6 +1009,8 @@ checks['AC-84'] = async (cdp) => {
         var f=getComputedStyle(r).fill+'|'+getComputedStyle(r).stroke;(actors[r.getAttribute('name')]=actors[r.getAttribute('name')]||new Set()).add(f)});
       var a={};Object.keys(actors).forEach(function(k){a[k]=Array.from(actors[k])});
       return {nodes:nodes,actors:a,minRatio:Math.round(minRatio*10)/10}})()`);
+    await p.goto('/'); await p.ready();
+    await q("localStorage.removeItem('docs-browser.theme'); true"); // an earlier check may have saved a choice
     const rendered = async (scheme) => {
       await p.media(scheme);
       await p.goto('/?file=docs/palette.md'); await p.ready();
@@ -1114,6 +1118,46 @@ checks['AC-86'] = async (cdp) => {
     const r = { shown, api, cargo, geo };
     const ok = shown === 'v' + api.version && api.version === cargo && /^\d+\.\d+\.\d+$/.test(api.version)
       && geo.inside && geo.rightOfButtons && geo.w > 20;
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
+// ---- AC-87: status bar with created/modified times and git facts
+checks['AC-87'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    const bar = () => q(`(function(){var b=document.getElementById('fileinfo');return {hidden:b.hidden,text:b.innerText,inside:(function(){var r=b.getBoundingClientRect(),m=document.getElementById('main').getBoundingClientRect();return r.top>=m.bottom-1&&r.bottom<=innerHeight+0.5})(),
+      modified:(b.querySelector('.fi-modified')||{}).title||'',branch:(b.querySelector('.fi-branch')||{}).textContent||'',dirty:!!b.querySelector('.fi-dirty')}})()`);
+    const r = {};
+    await p.goto('/'); await p.ready();
+    r.hiddenWithoutFile = (await bar()).hidden;
+    // committed file in a real repository
+    await p.goto('/?file=repo-demo/a.md'); await p.ready();
+    await waitFor(() => p.ev("!document.getElementById('fileinfo').hidden"), 5000, 50);
+    r.committed = await bar();
+    // untracked file: no commit yet, marked as uncommitted
+    await p.goto('/?file=repo-demo/b.md'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#fileinfo .fi-dirty')"), 5000, 50);
+    r.untracked = await bar();
+    // an HTML page also gets the bar, and the full-bleed page still fills the panel above it
+    await p.goto('/?file=docs/flow.html'); await p.ready();
+    await waitFor(() => p.ev("!document.getElementById('fileinfo').hidden"), 5000, 50);
+    r.html = await bar();
+    // a change on disk refreshes the modified time
+    await p.goto('/?file=repo-demo/b.md'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#fileinfo .fi-modified')"), 5000, 50);
+    const before = (await bar()).modified;
+    await sleep(1100);
+    r.refreshed = await withEdit('repo-demo/b.md', (c) => c + '\nchanged later\n', () =>
+      waitFor(async () => (await q("(document.querySelector('#fileinfo .fi-modified')||{}).title||''")) !== before, 8000, 100));
+    const c = r.committed, u = r.untracked;
+    const ok = r.hiddenWithoutFile
+      && !c.hidden && /Modified /.test(c.text) && c.branch.includes('trunk') && /Committed .* ago/.test(c.text)
+      && c.text.includes('add the first note') && !c.dirty && c.inside
+      && !u.hidden && u.dirty && /Not committed yet/.test(u.text) && u.branch.includes('trunk')
+      && !r.html.hidden && /Modified /.test(r.html.text) && r.html.inside
+      && r.refreshed;
     return [ok, JSON.stringify(r)];
   } finally { await p.close(); }
 };

@@ -445,13 +445,12 @@
 
   // Full-screen diagram viewer (PRD 7.4): a button on each diagram opens a copy of its SVG over the page.
   // Drag pans, the wheel zooms around the pointer, Escape closes.
-  var ICON_ZOOM = SVG_OPEN.replace('width="14" height="14"', 'width="15" height="15"') + '<path d="M9.5 2.5h4v4"/><path d="M6.5 13.5h-4v-4"/><path d="M13.5 2.5 9 7"/><path d="M2.5 13.5 7 9"/></svg>';
   function addDiagramButton(block) {
     if (!block.querySelector('svg')) return;
     var b = document.createElement('button');
     b.type = 'button'; b.className = 'mermaid-zoom';
     b.title = 'View full screen'; b.setAttribute('aria-label', 'View diagram full screen');
-    b.innerHTML = ICON_ZOOM;
+    b.textContent = '\u2922'; // a text glyph, not an <svg>: the page and its tests count a diagram's own svg
     b.addEventListener('click', function () { openDiagram(block); });
     block.appendChild(b);
   }
@@ -531,6 +530,51 @@
   }
 
   // `opts.keepScroll` is used by live reload: the page is re-rendered in place.
+  // Status bar under the preview (PRD 7.3): created and modified times and, in a git repository, the
+  // branch, the last commit of the file and whether it has uncommitted changes. Quiet on any failure.
+  function fmtTime(ms) {
+    var d = new Date(ms), p2 = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  }
+  function infoSpan(parent, cls, text, title) {
+    var s = document.createElement('span');
+    if (cls) s.className = cls;
+    s.textContent = text;
+    if (title) s.title = title;
+    parent.appendChild(s);
+    return s;
+  }
+  async function loadInfo(path, token) {
+    var bar = $('#fileinfo');
+    try {
+      var r = await fetch('/api/info?path=' + encodeURIComponent(path), { cache: 'no-store' });
+      if (!r.ok) throw new Error('no info');
+      var info = await r.json();
+      if (token !== state.token) return;
+      clear(bar);
+      var now = Date.now();
+      if (typeof info.created === 'number') infoSpan(bar, 'fi-created', 'Created ' + fmtTime(info.created), new Date(info.created).toString());
+      if (typeof info.modified === 'number') infoSpan(bar, 'fi-modified', 'Modified ' + L.formatAgo(info.modified, now), new Date(info.modified).toString());
+      if (info.git) {
+        var g = document.createElement('span');
+        g.className = 'fi-git';
+        infoSpan(g, 'fi-branch', '\u2387 ' + info.git.branch, 'git branch');
+        if (info.git.commit) {
+          var c = info.git.commit;
+          infoSpan(g, 'fi-commit', 'Committed ' + L.formatAgo(c.time * 1000, now) + ' \u00b7 ' + c.hash, new Date(c.time * 1000).toString());
+          if (c.subject) infoSpan(g, 'fi-sub', c.subject, c.subject);
+        } else {
+          infoSpan(g, 'fi-commit', 'Not committed yet');
+        }
+        if (info.git.dirty) infoSpan(g, 'fi-dirty', '\u25cf uncommitted changes', 'The file differs from its last commit');
+        bar.appendChild(g);
+      }
+      bar.hidden = bar.childNodes.length === 0;
+    } catch (e) {
+      if (token === state.token) { clear(bar); bar.hidden = true; }
+    }
+  }
+
   async function showFile(path, hash, opts) {
     var keepScroll = !!(opts && opts.keepScroll);
     var savedScroll = $('#main').scrollTop;
@@ -552,10 +596,12 @@
     markSelected(true);
     if (!path) {
       document.title = 'docs-browser';
+      $('#fileinfo').hidden = true;
       showState('Select a file from the list');
       return setReady();
     }
     document.title = path + ' - docs-browser';
+    loadInfo(path, token);
     try {
       if (L.isHtml(path)) await renderHtml(path, token);
       else await renderMarkdown(path, hash, token); // other types: the server answers 404 or 415

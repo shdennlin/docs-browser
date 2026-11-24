@@ -212,6 +212,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/events", get(api_events))
         .route("/api/search", get(api_search))
         .route("/api/version", get(api_version))
+        .route("/api/info", get(api_info))
         .route("/files/{*path}", get(files))
         .fallback(fallback)
         .layer(middleware::from_fn_with_state(state.clone(), guard))
@@ -353,6 +354,36 @@ async fn api_tree(State(state): State<Arc<AppState>>) -> Response {
             .insert("x-tree-truncated", HeaderValue::from_static("1"));
     }
     resp
+}
+
+/// Created and modified times and git facts for the status bar (PRD 7.3). The path is resolved with the
+/// same rules as `/files/*` (so HTML pages have a status bar too).
+async fn api_info(
+    State(state): State<Arc<AppState>>,
+    method: Method,
+    uri: Uri,
+    query: Result<Query<HashMap<String, String>>, QueryRejection>,
+) -> Response {
+    let Ok(Query(params)) = query else {
+        log_denied("bad-query", &method, &uri.to_string());
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(input) = params.get("path") else {
+        log_denied("missing-param", &method, &uri.to_string());
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let resolved = match state.resolver.resolve(input, Endpoint::Files) {
+        Ok(r) => r,
+        Err(d) => {
+            log_denied(d.reason(), &method, &uri.to_string());
+            return denied_status(&d).into_response();
+        }
+    };
+    let path = resolved.path.clone();
+    match tokio::task::spawn_blocking(move || crate::info::read(&path)).await {
+        Ok(Some(info)) => Json(info).into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn api_file(

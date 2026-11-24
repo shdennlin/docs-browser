@@ -173,3 +173,18 @@ test('contrastRatio and pickTextColor: keep a readable colour, fix an unreadable
   assert.equal(L.pickTextColor([30, 30, 30, 1], dark, dark, light), light); // dark text on a dark fill -> light text
   assert.equal(L.pickTextColor([68, 71, 90, 1], light, dark, light), light); // the Dracula node colour is fine
 });
+
+test('formatAgo gives a short relative time', () => {
+  const now = 1_000_000_000_000;
+  const ago = (sec) => L.formatAgo(now - sec * 1000, now);
+  assert.equal(ago(0), 'just now');
+  assert.equal(ago(59), 'just now');
+  assert.equal(ago(60), '1 minute ago');
+  assert.equal(ago(5 * 60 + 30), '5 minutes ago');
+  assert.equal(ago(3600), '1 hour ago');
+  assert.equal(ago(23 * 3600), '23 hours ago');
+  assert.equal(ago(86400 * 2), '2 days ago');
+  assert.equal(ago(86400 * 45), '1 month ago');
+  assert.equal(ago(86400 * 400), '1 year ago');
+  assert.equal(L.formatAgo(now + 5000, now), 'just now'); // a clock a little ahead
+});

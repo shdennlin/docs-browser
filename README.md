@@ -100,3 +100,4 @@ python3 tests/suite.py --milestone all   # every acceptance criterion of PRD sec
 - Hover a folder for its expand / collapse icons (open or close everything inside it); `Wrap` toggles long names; a floating `☰` outline lists the headings; `⚙` opens the settings. HTML pages fill the right panel.
 - Command/Control-click (or middle-click) a file to open it in a new tab; `[` `]` switch tabs, `Alt W` closes one. Shortcuts: `/` or `Cmd/Ctrl K` search, `j` `k` `g` `G` scroll, `o` outline, `d` light/dark, `c` copy the file name, `?` shows the full list.
 - Every Mermaid diagram has a `⤢` button that opens it full screen: drag to pan, mouse wheel (or pinch) to zoom, `Fit` or `0` to refit, `Esc` to close.
+- A status bar under the preview shows when the file was created and last modified and, inside a git repository, the branch, the file's last commit and whether it has uncommitted changes (git is optional; nothing is shown if it is missing).

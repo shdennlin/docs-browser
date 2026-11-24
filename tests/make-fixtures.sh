@@ -204,6 +204,22 @@ JS
 
 printf '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="blue"/></svg>\n' > docs/diagram.svg
 
+# A real git repository for the status bar (AC-86 file facts): a.md is committed, b.md is untracked.
+# Skipped when git is missing; the check then reports it.
+if command -v git >/dev/null 2>&1; then
+  mkdir -p repo-demo
+  (
+    cd repo-demo
+    git init -q -b trunk
+    printf '# Committed note\n\nstable text\n' > a.md
+    git add a.md
+    GIT_AUTHOR_NAME=T GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=T GIT_COMMITTER_EMAIL=t@example.invalid \
+      GIT_AUTHOR_DATE='2024-01-02T03:04:05Z' GIT_COMMITTER_DATE='2024-01-02T03:04:05Z' \
+      git -c commit.gpgsign=false commit -q -m 'add the first note'
+    printf '# Draft\n\nnot committed\n' > b.md
+  )
+fi
+
 # Symlinks (cannot be committed reliably).
 ln -s docs link-in
 ln -s /etc link-out

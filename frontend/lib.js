@@ -312,11 +312,23 @@
     return /^[1-9]\d{1,3}$/.test(s) ? Number(s) : null;
   }
 
+  // "just now", "5 minutes ago", "3 days ago" ... for a time in milliseconds; a time in the future counts as now.
+  function formatAgo(ms, now) {
+    var sec = Math.floor((now - ms) / 1000);
+    if (!(sec >= 60)) return 'just now';
+    var units = [[60, 'minute'], [3600, 'hour'], [86400, 'day'], [2592000, 'month'], [31536000, 'year']];
+    var best = units[0];
+    for (var i = 0; i < units.length; i++) if (sec >= units[i][0]) best = units[i];
+    var n = Math.floor(sec / best[0]);
+    return n + ' ' + best[1] + (n === 1 ? '' : 's') + ' ago';
+  }
+
   return {
     SIDEBAR_DEFAULT: SIDEBAR_DEFAULT, SIDEBAR_MIN: SIDEBAR_MIN,
     clampSidebarWidth: clampSidebarWidth, parseStoredWidth: parseStoredWidth,
     parseColor: parseColor, contrastRatio: contrastRatio, pickTextColor: pickTextColor,
     queryTokens: queryTokens, fuzzyMatch: fuzzyMatch, fuzzyFiles: fuzzyFiles, collectDirs: collectDirs,
+    formatAgo: formatAgo,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
     slugify: slugify, makeSlugger: makeSlugger,
     encodePath: encodePath, resolveRelative: resolveRelative, classifyLink: classifyLink,
