@@ -98,3 +98,21 @@ Incident: my first AC-63 and AC-68 implementation assumed the `open` crate looks
 The goal's closing check asks for the Linux half in one Docker run. `tests/linux-suite.sh` does that: one `rust:1` container builds the project as uid 1000, installs Chromium with apt (approved by the user), takes the node 22 binary from the approved `node:22-slim` image, runs `make test` and the whole suite. Its first run gave 84 PASS and 1 FAIL (AC-06).
 
 **Finding:** Chromium 156 sends `Origin: null` (with `Sec-Fetch-Site: cross-site`, mode `no-cors`) when a sandboxed HTML preview loads its own CSS, scripts and images. The strict Origin rule of PRD 12.1 answered 403, so those assets broke. Every earlier browser run used Google Chrome 158 on macOS, which does not send it. The fix relaxes a security rule, so the user was asked and approved option A: D11, `Origin: null` accepted for GET and HEAD on `/files/*` only; `/api/*` and the event stream stay strict. AC-26a and AC-26b test both directions and were mutation checked.
+
+## Final whole-project review and release 0.1.2
+
+`/reviewer:result` on everything except the vendored libraries (base: the vendor commit), run 20261124T151644Z-0OLIna: PASS, 0 critical, 0 high, 1 medium, 8 low, all 9 verified. Handled:
+
+- MEDIUM tags predating D11: released 0.1.2 (carries D11 and the fixes below); README names `v0.1.2`.
+- LOW: release profile of PRD 10.1 added to `Cargo.toml`; unused `anyhow` and `tokio-stream` removed; a literal `+` in `?file=` stays a plus; a tree update no longer re-opens folders the user closed; a rescan runs once the watcher is registered; only an `http://` origin counts as same-origin; watcher and rebuild error text is escaped.
+- LOW not changed: classifying a removed directory is O(removed paths x aliases) on the single state task, which only matters for very large deletions. Accepted; a fix would collapse removed paths to their topmost ancestor.
+
+## T-5.5 (release and rollback), final form
+
+`tests/release-check.sh v0.1.1 v0.1.2`: installs each tag from this repository with `cargo install --locked --git file://... --tag`, runs the smoke subset (AC-01, 07a, 20, 21, 25) against the installed binary, then rolls back by installing `v0.1.1` over `v0.1.2` and runs the subset again. Result: v0.1.1 installs as 0.1.1 (5/5), v0.1.2 installs as 0.1.2 (5/5), rollback gives 0.1.1 again (5/5). The earlier pair `v0.1.0` and `v0.1.1` passed the same check before D11. Tags are local only: `v0.1.0`, `v0.1.1`, `v0.1.2`.
+
+## Final runs on the tagged tree (v0.1.2)
+
+- `make test`: macOS exit 0 (27 Rust tests, vendor selftest, 7 node tests); Linux container exit 0 (28 Rust tests, same checks).
+- Full PRD 13 suite: macOS 85/85 (`DOCS_BROWSER_SUITE_OPEN=1`, `--write-benchmark`); Linux 85/85 in one container (`tests/linux-suite.sh`).
+- Side effect to know about: the two macOS `--open` checks (AC-63, AC-68) ask the OS to open a browser tab each time they run.
