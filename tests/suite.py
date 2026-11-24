@@ -8,8 +8,10 @@ every selected row passes.
 Usage: tests/suite.py [--milestone M0|M1|...|all] [--platform NAME] [--bin PATH]
 """
 import argparse
+import atexit
 import hashlib
 import http.client
+import json
 import os
 import re
 import shutil
@@ -72,26 +74,35 @@ class Server:
         self.binary, self.root, self.port, self.extra = binary, root, port, extra or []
         self.proc = None
         self.stderr_path = None
+        self.started_in = None
 
-    def __enter__(self):
+    def start(self):
         fd, self.stderr_path = tempfile.mkstemp(prefix="docs-browser-stderr-")
         os.close(fd)
+        t0 = time.time()
         self.proc = subprocess.Popen(
             [self.binary, self.root, "--port", str(self.port)] + self.extra,
             stdout=subprocess.DEVNULL,
             stderr=open(self.stderr_path, "wb"),
         )
-        for _ in range(50):
+        for _ in range(100):
             try:
                 socket.create_connection(("127.0.0.1", self.port), timeout=0.2).close()
+                self.started_in = time.time() - t0
                 return self
             except OSError:
                 if self.proc.poll() is not None:
                     break
-                time.sleep(0.1)
-        raise RuntimeError("server did not start; stderr: " + open(self.stderr_path).read())
+                time.sleep(0.05)
+        raise RuntimeError("server did not start; stderr: " + self.stderr())
 
-    def __exit__(self, *a):
+    def stderr(self):
+        try:
+            return open(self.stderr_path, encoding="utf-8", errors="replace").read()
+        except OSError:
+            return ""
+
+    def stop(self):
         if self.proc and self.proc.poll() is None:
             self.proc.send_signal(signal.SIGINT)
             try:
@@ -101,6 +112,39 @@ class Server:
         if self.stderr_path and os.path.exists(self.stderr_path):
             os.unlink(self.stderr_path)
 
+    def __enter__(self):
+        return self.start()
+
+    def __exit__(self, *a):
+        self.stop()
+
+
+PORT = 4100          # default-mode server (PRD 13)
+PORT_HIDDEN = 4101   # --include-hidden server
+PORT_BIG = 4102      # 60,000-file tree
+
+
+def server(ctx, hidden=False):
+    """Lazily starts one shared server per mode; stopped by main()."""
+    key = "hidden" if hidden else "default"
+    if key not in ctx["servers"]:
+        port = PORT_HIDDEN if hidden else PORT
+        extra = ["--include-hidden"] if hidden else []
+        ctx["servers"][key] = Server(ctx["bin"], FIXTURE_SITE, port, extra).start()
+    return ctx["servers"][key]
+
+
+def get(port, target, **kw):
+    return raw_get(port, target, **kw)
+
+
+def flatten(entries, prefix=""):
+    """All (name, type, path) triples of a /api/tree response."""
+    out = []
+    for e in entries:
+        out.append((e["name"], e["type"], e.get("path")))
+        out.extend(flatten(e.get("children", [])))
+    return out
 
 
 def cargo_unit_test(ctx):
@@ -116,6 +160,7 @@ def cargo_unit_test(ctx):
         return False, "cargo test failed: " + out.strip()[-200:]
     return True, f"{total} Rust test(s) passed"
 
+
 # ---------------------------------------------------------------- M0
 @ac("AC-32")
 def ac_32(ctx):
@@ -126,6 +171,304 @@ def ac_32(ctx):
     return True, "checksums OK; flipped byte detected"
 
 
+# ---------------------------------------------------------------- M2
+@ac("AC-01")
+def ac_01(ctx):
+    srv = server(ctx)
+    status, _, _ = get(PORT, "/")
+    first = srv.stderr().splitlines()[0] if srv.stderr() else ""
+    root = os.path.realpath(FIXTURE_SITE)
+    ok = (
+        status == 200
+        and srv.started_in <= 2.0
+        and first.startswith("Serving ")
+        and root in first
+        and "http://127.0.0.1:4100" in first
+    )
+    return ok, f"status={status} started_in={srv.started_in:.2f}s first_line={first[:90]!r}"
+
+
+@ac("AC-02")
+def ac_02(ctx):
+    server(ctx)
+    status, _, body = get(PORT, "/api/tree")
+    tree = json.loads(body)
+    triples = flatten(tree)
+    paths = {p for _, _, p in triples if p}
+    names = {n for n, _, _ in triples}
+    must = {"README.md", "docs/architecture.md", "docs/中文 筆記.md", "docs/flow.html",
+            "link-in/architecture.md"}
+    absent = {".env", ".git", ".hidden", "node_modules", "notes.txt", "link-out", "evil",
+              "public", "loop", "self", "dir.md"}
+    problems = []
+    if status != 200:
+        problems.append(f"status {status}")
+    problems += [f"missing {m}" for m in must - paths]
+    problems += [f"unexpected {a}" for a in absent & names]
+
+    def dirs_first(entries, where):
+        seen_file = False
+        for e in entries:
+            if e["type"] == "file":
+                seen_file = True
+            elif seen_file:
+                problems.append(f"directory after file in {where}")
+            dirs_first(e.get("children", []), where + "/" + e["name"])
+
+    dirs_first(tree, "")
+    return not problems, "; ".join(problems) or f"{len(triples)} entries, rules hold"
+
+
+@ac("AC-03a")
+def ac_03a(ctx):
+    server(ctx)
+    status, headers, body = get(PORT, "/api/file?path=README.md")
+    want = open(os.path.join(FIXTURE_SITE, "README.md"), "rb").read()
+    ok = status == 200 and headers.get("content-type") == "text/plain; charset=utf-8" and body == want
+    return ok, f"status={status} type={headers.get('content-type')} body_equal={body == want}"
+
+
+@ac("AC-07a")
+def ac_07a(ctx):
+    server(ctx)
+    _, headers, _ = get(PORT, "/files/docs/flow.html")
+    v = headers.get("content-security-policy")
+    return v == "sandbox allow-scripts allow-popups", f"csp={v!r}"
+
+
+@ac("AC-08")
+def ac_08(ctx):
+    server(ctx)
+    want = {"style.css": "text/css", "app.js": "text/javascript", "diagram.svg": "image/svg+xml"}
+    bad = []
+    for name, ctype in want.items():
+        status, h, _ = get(PORT, f"/files/docs/{name}")
+        if status != 200 or not h.get("content-type", "").startswith(ctype) \
+                or h.get("x-content-type-options") != "nosniff":
+            bad.append(f"{name}: {status} {h.get('content-type')} {h.get('x-content-type-options')}")
+    return not bad, "; ".join(bad) or "3 assets: status, type, nosniff ok"
+
+
+@ac("AC-11")
+def ac_11(ctx):
+    server(ctx)
+    status, _, _ = get(PORT, "/api/file?path=notes.txt")
+    return status == 415, f"status={status}"
+
+
+@ac("AC-12a")
+def ac_12a(ctx):
+    server(ctx)
+    status, _, _ = get(PORT, "/api/file?path=docs/big.md")
+    # Exact boundary: 5 MiB is served, 5 MiB + 1 byte is refused (PRD: "larger than 5 MiB").
+    root = tempfile.mkdtemp(prefix="docs-browser-cap-")
+    try:
+        for name, size in (("exact.md", 5 * 1024 * 1024), ("over.md", 5 * 1024 * 1024 + 1)):
+            with open(os.path.join(root, name), "wb") as f:
+                f.write(b"a" * size)
+        with Server(ctx["bin"], root, PORT_BIG):
+            exact = get(PORT_BIG, "/api/file?path=exact.md")[0]
+            over = get(PORT_BIG, "/api/file?path=over.md")[0]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    ok = status == 413 and exact == 200 and over == 413
+    return ok, f"big.md={status} exactly-5MiB={exact} 5MiB+1={over}"
+
+
+@ac("AC-13a")
+def ac_13a(ctx):
+    server(ctx)
+    status, _, _ = get(PORT, "/api/file?path=docs/%E4%B8%AD%E6%96%87%20%E7%AD%86%E8%A8%98.md")
+    return status == 200, f"status={status}"
+
+
+@ac("AC-14a")
+def ac_14a(ctx):
+    server(ctx)
+    root = tempfile.mkdtemp(prefix="docs-browser-big-")
+    try:
+        for d in range(60):
+            os.makedirs(os.path.join(root, f"d{d:02d}"))
+            for i in range(1000):
+                with open(os.path.join(root, f"d{d:02d}", f"f{i:04d}.md"), "w") as f:
+                    f.write("# f\n")
+        with Server(ctx["bin"], root, PORT_BIG):
+            status, h, body = get(PORT_BIG, "/api/tree")
+        files = sum(1 for _, t, _ in flatten(json.loads(body)) if t == "file")
+        # The cap is real: about 50,000 entries come back, and the normal fixture is not marked truncated.
+        normal_hdr = get(PORT, "/api/tree")[1].get("x-tree-truncated") if "default" in ctx["servers"] else None
+        ok = (status == 200 and h.get("x-tree-truncated") == "1"
+              and 49_000 <= files <= 50_000 and normal_hdr is None)
+        return ok, (f"status={status} x-tree-truncated={h.get('x-tree-truncated')} "
+                    f"files_returned={files} (60,000 on disk) normal_tree_header={normal_hdr}")
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+@ac("AC-20")
+def ac_20(ctx):
+    server(ctx)
+    targets = [
+        "/files/../../etc/hosts",
+        "/files/%2e%2e/%2e%2e/etc/hosts",
+        "/files/%252e%252e/etc/hosts",
+        "/files//a",
+        "/api/file?path=../../etc/hosts",
+        "/api/file?path=/etc/hosts",
+        "/api/file?path=docs%5C..%5C..%5Cetc%5Chosts",
+        "/api/file?path=README.md%00",
+    ]
+    bad = []
+    for t in targets:
+        status, _, body = get(PORT, t)
+        if status != 404 or b"localhost" in body:
+            bad.append(f"{t} -> {status}")
+    return not bad, "; ".join(bad) or f"{len(targets)} traversal inputs all 404, no file content"
+
+
+@ac("AC-21")
+def ac_21(ctx):
+    server(ctx)
+    status, _, _ = get(PORT, "/files/link-out/hosts")
+    return status == 404, f"status={status}"
+
+
+@ac("AC-22")
+def ac_22(ctx):
+    server(ctx)
+    status, _, _ = get(PORT, "/files/link-in/architecture.md")
+    return status == 200, f"status={status}"
+
+
+@ac("AC-23")
+def ac_23(ctx):
+    server(ctx)
+    status, _, _ = get(PORT, "/files/evil/secret.md")
+    return status == 404, f"status={status}"
+
+
+@ac("AC-24")
+def ac_24(ctx):
+    server(ctx)
+    t0 = time.time()
+    status, _, body = get(PORT, "/api/tree")
+    dt = time.time() - t0
+    names = {n for n, _, _ in flatten(json.loads(body))}
+    ok = status == 200 and dt <= 2.0 and "loop" not in names
+    return ok, f"status={status} time={dt:.3f}s loop_listed={'loop' in names} bytes={len(body)}"
+
+
+@ac("AC-25")
+def ac_25(ctx):
+    server(ctx)
+    server(ctx, hidden=True)
+    paths = ["/files/.hidden/note.md", "/files/.env", "/files/.git/config",
+             "/files/node_modules/pkg/index.md"]
+    default = [get(PORT, p)[0] for p in paths]
+    hidden = [get(PORT_HIDDEN, p)[0] for p in paths]
+    ok = default == [404, 404, 404, 404] and hidden == [200, 404, 404, 404]
+    return ok, f"default={default} include_hidden={hidden}"
+
+
+@ac("AC-26a")
+def ac_26a(ctx):
+    server(ctx)
+    cases = [
+        ({"host": "evil.example:4100"}, 403),
+        ({"host": "127.0.0.2:4100"}, 403),
+        ({"headers": {"Origin": "http://evil.example"}}, 403),
+        ({}, 200),
+    ]
+    got = []
+    for kw, want in cases:
+        status, _, _ = get(PORT, "/api/tree", **kw)
+        got.append((status, want))
+    # A rejection must carry the security headers too (they are stamped by the outermost layer).
+    _, h403, _ = get(PORT, "/api/tree", host="evil.example:4100")
+    hdr_ok = h403.get("x-content-type-options") == "nosniff" and h403.get("cache-control") == "no-store"
+    ok = all(a == b for a, b in got) and hdr_ok
+    return ok, f"got/want={got} 403_headers_ok={hdr_ok}"
+
+
+@ac("AC-28")
+def ac_28(ctx):
+    server(ctx)
+    r = sh(["./tests/listening.sh", str(PORT)], cwd=ROOT)
+    out = r.stdout.split()
+    return out == [f"127.0.0.1:{PORT}"], f"listening={out}"
+
+
+@ac("AC-29")
+def ac_29(ctx):
+    server(ctx)
+    a = get(PORT, "/api/file", method="POST")[0]
+    b = get(PORT, "/files/x", method="PUT")[0]
+    return (a, b) == (405, 405), f"POST /api/file={a} PUT /files/x={b}"
+
+
+@ac("AC-30")
+def ac_30(ctx):
+    server(ctx)
+    seen = []
+    for hdrs in ({}, {"Origin": f"http://127.0.0.1:{PORT}"}, {"Origin": "http://localhost:9"}):
+        status, h, _ = get(PORT, "/files/docs/style.css", headers=hdrs)
+        seen.append((status, [k for k in h if k.startswith("access-control")]))
+    ok = all(acl == [] for _, acl in seen) and seen[0][0] == 200 and seen[1][0] == 200
+    return ok, f"(status, access-control headers) per request={seen}"
+
+
+@ac("AC-31")
+def ac_31(ctx):
+    server(ctx)
+    _, h, _ = get(PORT, "/")
+    v = h.get("content-security-policy", "")
+    ok = "default-src 'self'" in v and "object-src 'none'" in v and "frame-ancestors 'none'" in v
+    return ok, f"csp={v[:80]!r} frame_ancestors={'frame-ancestors' in v}"
+
+
+@ac("AC-33")
+def ac_33(ctx):
+    server(ctx)
+    server(ctx, hidden=True)
+    paths = ["/files/Node_Modules/pkg/index.md", "/files/.GIT/config"]
+    results = {
+        "default": [get(PORT, p)[0] for p in paths],
+        "hidden": [get(PORT_HIDDEN, p)[0] for p in paths],
+        "upper": get(PORT, "/files/docs/UPPER.MD")[0],
+    }
+    ok = results["default"] == [404, 404] and results["hidden"] == [404, 404] and results["upper"] == 200
+    return ok, str(results)
+
+
+@ac("AC-34")
+def ac_34(ctx):
+    server(ctx)
+    server(ctx, hidden=True)
+    got = {
+        "notes.txt": get(PORT, "/files/notes.txt")[0],
+        ".env default": get(PORT, "/files/.env")[0],
+        ".env hidden": get(PORT_HIDDEN, "/files/.env")[0],
+        "flow.html": get(PORT, "/files/docs/flow.html")[0],
+    }
+    ok = list(got.values()) == [404, 404, 404, 200]
+    return ok, str(got)
+
+
+@ac("AC-35")
+def ac_35(ctx):
+    server(ctx)
+    got = [get(PORT, "/files/docs")[0], get(PORT, "/api/file?path=docs/dir.md")[0], get(PORT, "/api/file")[0]]
+    return got == [404, 404, 404], f"statuses={got}"
+
+
+@ac("AC-36")
+def ac_36(ctx):
+    server(ctx)
+    status = get(PORT, "/files/public/config")[0]
+    names = {n for n, _, _ in flatten(json.loads(get(PORT, "/api/tree")[2]))}
+    return status == 404 and "public" not in names, f"status={status} public_listed={'public' in names}"
+
+
 # ---------------------------------------------------------------- driver
 def main():
     p = argparse.ArgumentParser()
@@ -134,7 +477,13 @@ def main():
     p.add_argument("--bin", default=os.path.join(ROOT, "target", "release", "docs-browser"))
     args = p.parse_args()
 
-    ctx = {"bin": args.bin, "platform": args.platform}
+    if not os.path.exists(FIXTURE_SITE):
+        sh(["./tests/make-fixtures.sh"], cwd=ROOT)
+    if not os.path.exists(args.bin):
+        if args.bin == os.path.join(ROOT, "target", "release", "docs-browser"):
+            sh(["cargo", "build", "--release", "--quiet"], cwd=ROOT)
+    ctx = {"bin": args.bin, "platform": args.platform, "servers": {}}
+    atexit.register(lambda: [s.stop() for s in ctx["servers"].values()])
     rows = prd_rows()
     sel = [(i, m) for i, m in rows if args.milestone in ("all", m)]
     results = []

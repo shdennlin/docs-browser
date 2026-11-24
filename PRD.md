@@ -10,6 +10,7 @@
 | v1.4 | `/files/*` serves an **extension whitelist** only; visibility checked on both the requested and the canonical path and compared case-insensitively; one coherent symlink policy (followed, listed, watched, aliased); event pipeline rebuilt as *update state, then broadcast*; every acceptance criterion owned by exactly one milestone; unit tests separated from acceptance criteria; decisions D1 to D10 |
 | v1.4.1 (2026-11-24) | T-0.3 findings: `follow_symlinks(false)` is required on Linux, real-path events make `aliases` mandatory, ignored directories may still be watched (8.1); debouncer limits, directory detection, `Rescan` API (8.2); drop the watcher on any initial `watch()` error (8.5); new AC-57. Earlier in this revision, M0 measurements folded in: `style-src 'unsafe-inline'` is required by Mermaid (12.5); macOS `canonicalize` returns the on-disk case and APFS keeps the stored Unicode form (12.2); pinned crate versions, `rust-version`, package `exclude` (10.1); `/files//a` added to AC-20; Linux-specific variants for AC-28, AC-63, AC-68, AC-69 and a Linux-run recipe in 13 |
 | v1.4.2 (2026-11-24) | M1: directory scan uses `std::fs::read_dir`; `walkdir` removed (10.1, 10.3); resolver steps 3 and 7 clarified (lexical normalization, extension checked on listed name and canonical target, non-regular files denied) |
+| v1.4.3 (2026-11-24) | CP-2: app-shell CSP gains `frame-ancestors 'none'` (12.5); every response, including the Host/Origin 403, carries the security headers (11); `/api/file` bounds the read itself and `/files/*` bounds the stream to the opened length (11); `tower-http` and `mime_guess` dropped (fixed MIME table, one header middleware); `rust-embed` needs its `include-exclude` feature to keep vendor bookkeeping files out of the binary (10.1) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -378,12 +379,12 @@ Versions are chosen in task T-0.1, written to `Cargo.toml` as minor-pinned requi
 | Concern | Crate | Notes |
 |---|---|---|
 | HTTP server, routing | `axum` + `tokio` | **Wildcard route syntax differs between axum 0.7 (`/*path`) and 0.8 (`/{*path}`).** T-0.1 compiles a wildcard route against the chosen version first. axum's `Path` and `Query` extractors already percent-decode; see §12.2 |
-| SSE streams, header layers | `tokio-stream`, `tower-http` | Final list confirmed in T-0.1 |
+| SSE streams | `tokio-stream` | `tower-http` was dropped in M2: headers are set by one small axum middleware |
 | File watching | `notify` + `notify-debouncer-mini` | The debouncer cannot tell removal from change; §8.2 classifies against the snapshot instead |
 | CLI parsing | `clap` (derive) | |
 | Embedded frontend | `rust-embed` | |
 | Directory scan | `std::fs::read_dir` (`walkdir` dropped in M1: the scanner lists one directory at a time and decides about symlinks itself) | Symlinks are handled manually (§10.3) |
-| MIME types | fixed table for the whitelist (`mime_guess` allowed as a fallback source) | `.js` must map to `text/javascript`, `.svg` to `image/svg+xml` |
+| MIME types | a fixed table in `server.rs` (`mime_guess` dropped in M2: the whitelist is small and fixed) | `.js` must map to `text/javascript`, `.svg` to `image/svg+xml` |
 | Errors | `anyhow` | |
 | Open browser | `open` | |
 | Serialization | `serde`, `serde_json` | |
@@ -578,7 +579,7 @@ Neither layer grants `allow-same-origin`. `/api/*` and `/files/*` send no CORS h
 ```text
 default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 img-src 'self' data: https:; frame-src 'self'; connect-src 'self';
-object-src 'none'; base-uri 'none'
+object-src 'none'; base-uri 'none'; frame-ancestors 'none'
 ```
 
 Measured in T-0.4 (`docs/spikes/T-0.4.md`): Mermaid injects an inline `<style>` element and inline `style` attributes, so `style-src` must keep `'unsafe-inline'`. Under a strict `style-src 'self'` it still renders but with 37 CSP violations and unstyled (black) shapes. `script-src 'self'` is sufficient; no `'unsafe-eval'` is needed.
@@ -672,14 +673,14 @@ site/
 | AC-23 | M2 | §12.2 prefix | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/evil/secret.md` | `404` |
 | AC-24 | M2 | §10.3 cycle | `time curl -s $BASE/api/tree` | ≤ 2 s; finite; no `loop` entry |
 | AC-25 | M2 | §7.1 hidden | Default, then `--include-hidden`: `/files/.hidden/note.md`, `/files/.env`, `/files/.git/config`, `/files/node_modules/pkg/index.md` | Default: all `404`. With `--include-hidden`: `.hidden/note.md` → `200`; `.env`, `.git/config`, `node_modules/...` still `404` |
-| AC-26a | M2 | §12.1 Host/Origin | `curl -s -o /dev/null -w '%{http_code}'` on `$BASE/api/tree` with: `-H 'Host: evil.example:4100'`; `-H 'Host: 127.0.0.2:4100'`; `-H 'Origin: http://evil.example'`; no extra headers | `403`; `403`; `403`; `200` |
+| AC-26a | M2 | §12.1 Host/Origin | `curl -s -o /dev/null -w '%{http_code}'` on `$BASE/api/tree` with: `-H 'Host: evil.example:4100'`; `-H 'Host: 127.0.0.2:4100'`; `-H 'Origin: http://evil.example'`; no extra headers | `403`; `403`; `403`; `200`. A `403` response also carries `x-content-type-options: nosniff` and `cache-control: no-store` |
 | AC-26b | M4 | §12.1 events | `curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' $BASE/api/events` | `403` |
 | AC-26c | M5 | §12.1 non-loopback | Start with `--host 0.0.0.0`; `curl -H 'Host: anything:4101'` (no Origin) then `curl -H 'Host: a:4101' -H 'Origin: http://b:4101'` | `200`; `403` |
 | AC-27 | M5 | §9.2 warning | `docs-browser tests/fixtures/site --host 0.0.0.0 --port 4101` | stderr contains `WARNING` and `exposes`; listens on `0.0.0.0:4101`; process keeps running |
 | AC-28 | M2 | §12.1 default bind | `tests/listening.sh 4100` (uses `lsof`; falls back to `/proc/net/tcp` where `lsof` is absent, as in the Linux image) | `127.0.0.1:4100` only |
 | AC-29 | M2 | §11 methods | `curl -s -o /dev/null -w '%{http_code}' -X POST $BASE/api/file`; `-X PUT $BASE/files/x` | `405`; `405` |
 | AC-30 | M2 | §11 CORS | `curl -sI -H 'Origin: http://localhost:9' $BASE/files/docs/style.css \| grep -ic access-control` | `0` |
-| AC-31 | M2 | §12.5 CSP | `curl -sI $BASE/ \| grep -i content-security-policy` | Contains `default-src 'self'` and `object-src 'none'` |
+| AC-31 | M2 | §12.5 CSP | `curl -sI $BASE/ \| grep -i content-security-policy` | Contains `default-src 'self'`, `object-src 'none'` and `frame-ancestors 'none'` |
 | AC-32 | M0 | §12.6 vendor | `make test` runs the checksum test; then flip one byte of a vendored file | Passes; fails after the edit |
 | AC-33 | M2 | §7.1 case | `/files/Node_Modules/pkg/index.md`, `/files/.GIT/config` (default and `--include-hidden`); `/files/docs/UPPER.MD` | `404`; `404`; `200` |
 | AC-34 | M2 | §7.1 whitelist | `/files/notes.txt`, `/files/.env` (both modes), `/files/docs/flow.html` | `404`; `404`; `200` |

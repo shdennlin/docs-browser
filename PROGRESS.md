@@ -37,3 +37,16 @@ Tracks PRD section 16 tasks and evidence. Run `python3 tests/suite.py` for the l
 | T-1.1 `resolve.rs`, `visible()`, whitelist | done | UT-01 to UT-07 PASS on macOS and Linux (uid 1000); mutation checks: removing the canonical-visibility check, the root prefix check, or the case-insensitive ignore compare each fail the matching test |
 | T-1.2 `tree.rs` scanner | done | UT-08 to UT-11 PASS on both platforms; removing the cycle rule fails UT-08 |
 | CP-1 checkpoint | done | `/reviewer:result` run 20261124T062351Z-YTgFKN: PASS, 0 critical, 0 high, 1 medium, 3 low. All 4 verified and handled: F1 (file-symlink tests added, PRD 12.2 step 7 clarified), F2 (normalisation documented and tested), F3 (Linux-only non-UTF-8 test), F4 (scanner skips non-regular symlink targets, caps asserted). Own review found no bypass. Mutation checks caught: canonical visibility, root prefix, cycle rule, case-insensitive ignore, canonical extension, non-regular target guard (the first FIFO test did not exercise its guard; fixed) |
+
+## M2
+
+| Task | Status | Evidence |
+|---|---|---|
+| T-2.0 minimal main, AppState | done | AC-01, AC-28 PASS on macOS and Linux |
+| T-2.1 routes and status codes | done | AC-02, 03a, 11, 12a, 13a, 14a, 24, 29, 35 PASS |
+| T-2.2 headers | done | AC-07a, 30, 31 PASS |
+| T-2.3 Host/Origin | done | AC-26a PASS |
+| T-2.4 security via HTTP | done | AC-20 to 23, 25, 33, 34, 36 PASS |
+| Mutation checks | done | removing: sandbox CSP, Host allowlist, Origin check, 5 MiB cap, 415 mapping, nosniff each fails exactly its AC |
+| Platforms | done | macOS (rustc 1.95.0) and Linux uid 1000 in Docker (rustc 1.100.0, no lsof): 24/24 |
+| CP-2 checkpoint | done | `/reviewer:result` run 20261124T063348Z-gBTz3g: FAIL on first pass (1 high, 2 medium, 5 low; 8 verified, 0 refuted). HIGH = my own regression: a slice edit deleted `cargo_unit_test` from tests/suite.py so UT rows crashed (reproduced, restored). MEDIUM: `/api/file` read now bounded with `take(MAX+1)`; header middleware moved outermost so the Host/Origin 403 carries security headers. LOW: `frame-ancestors 'none'` added, `/files` stream bounded to the opened length, boundary tests added (exactly 5 MiB = 200, +1 byte = 413; tree cap counts ~50,000 files and the normal tree is not marked truncated). Symlink-swap race left as is: accepted risk R9 in the PRD. Mutation checks for the fixes pass. |
