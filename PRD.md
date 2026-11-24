@@ -17,6 +17,7 @@
 | v1.4.7 (2026-11-24) | CP-4: deleting a symlink is classified; `resync` on every rescan; late SSE streams see shutdown; invisible paths filtered in the watcher; client reconnects by hand when the browser gives up, connects before the first fetch, cancels a pending re-render on `removed` (8.2, 8.3, 8.5) |
 | v1.4.8 (2026-11-24) | M5: `--open` checks run on macOS only with `DOCS_BROWSER_SUITE_OPEN=1` (the opener cannot be intercepted: the `open` crate calls `/usr/bin/open` by absolute path); the browse URL is a pure function with a unit test (AC-63, AC-68); README added |
 | v1.4.9 (2026-11-24) | CP-5: unreadable directory exits 2; startup, warning and error paths are escaped; log writes ignore a closed stderr; `--verbose` omits the query string; `--open` uses a detached opener; AC-37, 60, 67, 69 strengthened; README install path (9.1, 9.3, 13) |
+| v1.4.11 (2026-11-24) | D11, approved by the user: `Origin: null` is accepted for GET and HEAD on `/files/*` only, because Chromium 156 sends it for the assets of a sandboxed HTML preview and the strict rule broke them; found only when the suite ran with Chromium inside the Linux container (12.1, 15, AC-26a, AC-26b) |
 | v1.4.10 (2026-11-24) | AC-26c and AC-27 use ports of their own: a shared port made AC-26c fail in a full run only (13) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
@@ -549,7 +550,7 @@ Served by the same HTML shell as `/` and **always HTTP 200**. The table below ap
 
 - Default bind is `127.0.0.1`. Other addresses require explicit `--host` and print the warning in §9.2.
 - **Loopback bind:** a request is rejected with 403 unless its `Host` header is exactly one of `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`. Other loopback aliases such as `127.0.0.2` are rejected.
-- **Origin** (every endpoint, both bind modes): if an `Origin` header is present, its host and port must equal the request's `Host` header (same origin); otherwise 403. A missing `Origin` is allowed.
+- **Origin** (every endpoint, both bind modes): if an `Origin` header is present, its host and port must equal the request's `Host` header (same origin); otherwise 403. A missing `Origin` is allowed. **One exception (D11):** `Origin: null` is accepted for `GET` and `HEAD` requests to `/files/*` only. A sandboxed HTML preview has an opaque origin, and some browsers (measured: Chromium 156) send `Origin: null` when it loads its own CSS, scripts and images, which broke relative assets (PRD 6). `/api/*`, `/api/events` and every other method keep the strict rule; `/files/*` sends no CORS headers and always carries `Content-Security-Policy: sandbox`, so a page with a null origin can load those resources but not read them.
 - **Non-loopback bind:** the `Host` allowlist is disabled, because the server cannot know every name it is reached by; the Origin rule above stays on (D9). Risk R1 applies.
 
 ### 12.2 Path resolution (Rust rules)
@@ -683,8 +684,8 @@ site/
 | AC-23 | M2 | §12.2 prefix | `curl -s -o /dev/null -w '%{http_code}' $BASE/files/evil/secret.md` | `404` |
 | AC-24 | M2 | §10.3 cycle | `time curl -s $BASE/api/tree` | ≤ 2 s; finite; no `loop` entry |
 | AC-25 | M2 | §7.1 hidden | Default, then `--include-hidden`: `/files/.hidden/note.md`, `/files/.env`, `/files/.git/config`, `/files/node_modules/pkg/index.md` | Default: all `404`. With `--include-hidden`: `.hidden/note.md` → `200`; `.env`, `.git/config`, `node_modules/...` still `404` |
-| AC-26a | M2 | §12.1 Host/Origin | `curl -s -o /dev/null -w '%{http_code}'` on `$BASE/api/tree` with: `-H 'Host: evil.example:4100'`; `-H 'Host: 127.0.0.2:4100'`; `-H 'Origin: http://evil.example'`; no extra headers | `403`; `403`; `403`; `200`. A `403` response also carries `x-content-type-options: nosniff` and `cache-control: no-store` |
-| AC-26b | M4 | §12.1 events | `curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' $BASE/api/events` | `403` |
+| AC-26a | M2 | §12.1 Host/Origin | `curl -s -o /dev/null -w '%{http_code}'` on `$BASE/api/tree` with: `-H 'Host: evil.example:4100'`; `-H 'Host: 127.0.0.2:4100'`; `-H 'Origin: http://evil.example'`; no extra headers | `403`; `403`; `403`; `200`. A `403` response also carries `x-content-type-options: nosniff` and `cache-control: no-store`. With `Origin: null`: `/api/tree` gives `403`, `GET /files/docs/style.css` gives `200`, `POST` to it gives `403` (D11) |
+| AC-26b | M4 | §12.1 events | `curl -s -o /dev/null -w '%{http_code}' -H 'Origin: http://evil.example' $BASE/api/events`, and the same with `-H 'Origin: null'` | `403`; `403` (D11 does not cover the event stream) |
 | AC-26c | M5 | §12.1 non-loopback | Start with `--host 0.0.0.0` on a port of its own (the runner uses 4118: 4101 is held by the AC-25 server for the whole run); `curl -H 'Host: anything:<port>'` (no Origin) then `curl -H 'Host: a:<port>' -H 'Origin: http://b:<port>'` | `200`; `403` |
 | AC-27 | M5 | §9.2 warning | `docs-browser tests/fixtures/site --host 0.0.0.0 --port <port>` (the runner uses 4119) | stderr contains `WARNING` and `exposes`; listens on the wildcard address (`0.0.0.0:<port>` or `*:<port>`); process keeps running |
 | AC-28 | M2 | §12.1 default bind | `tests/listening.sh 4100` (uses `lsof`; falls back to `/proc/net/tcp` where `lsof` is absent, as in the Linux image) | `127.0.0.1:4100` only |
@@ -814,6 +815,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | D8 | The residual exposure of `--include-hidden` (whitelisted files in dot folders) is accepted |
 | D9 | The Origin check stays on in non-loopback mode, as a same-origin comparison with `Host` |
 | D10 | In-root symlinks are followed and listed; the watcher covers them through the root watch, and events are delivered per listed path via `aliases` |
+| D11 | `Origin: null` is accepted for GET and HEAD on `/files/*` only, so HTML previews keep their relative assets in browsers that send it (12.1). Approved by the user after a measurement; the strict same-origin rule stays for `/api/*` and the event stream |
 
 ### Open questions
 

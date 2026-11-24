@@ -381,6 +381,7 @@ def ac_26a(ctx):
         ({"host": "evil.example:4100"}, 403),
         ({"host": "127.0.0.2:4100"}, 403),
         ({"headers": {"Origin": "http://evil.example"}}, 403),
+        ({"headers": {"Origin": "null"}}, 403),  # D11: never accepted for the API
         ({}, 200),
     ]
     got = []
@@ -390,8 +391,14 @@ def ac_26a(ctx):
     # A rejection must carry the security headers too (they are stamped by the outermost layer).
     _, h403, _ = get(PORT, "/api/tree", host="evil.example:4100")
     hdr_ok = h403.get("x-content-type-options") == "nosniff" and h403.get("cache-control") == "no-store"
-    ok = all(a == b for a, b in got) and hdr_ok
-    return ok, f"got/want={got} 403_headers_ok={hdr_ok}"
+    # D11: `Origin: null` (an opaque-origin HTML preview loading its assets) is accepted for /files/* only.
+    files_null = get(PORT, "/files/docs/style.css", headers={"Origin": "null"})[0]
+    files_null_post = get(PORT, "/files/docs/style.css", method="POST", headers={"Origin": "null"})[0]
+    files_evil = get(PORT, "/files/docs/style.css", headers={"Origin": "http://evil.example"})[0]
+    d11_ok = (files_null, files_null_post, files_evil) == (200, 403, 403)
+    ok = all(a == b for a, b in got) and hdr_ok and d11_ok
+    return ok, (f"got/want={got} 403_headers_ok={hdr_ok} "
+                f"/files Origin null GET={files_null} (want 200) POST={files_null_post} (want 403) evil={files_evil} (want 403)")
 
 
 @ac("AC-28")
@@ -652,9 +659,11 @@ def _no_event_but_control(port, quiet_path):
 @ac("AC-26b")
 def ac_26b(ctx):
     server(ctx)
-    sse = SSE(PORT, headers={"Origin": "http://evil.example"})
-    sse.close()
-    return sse.status == 403, f"status={sse.status}"
+    evil = SSE(PORT, headers={"Origin": "http://evil.example"})
+    evil.close()
+    null = SSE(PORT, headers={"Origin": "null"})  # D11 does not extend to the event stream
+    null.close()
+    return (evil.status, null.status) == (403, 403), f"evil origin={evil.status} Origin null={null.status}"
 
 
 @ac("AC-48")

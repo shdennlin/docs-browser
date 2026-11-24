@@ -262,7 +262,13 @@ async fn guard(State(state): State<Arc<AppState>>, req: Request, next: Next) -> 
                 .map_or(false, |authority| authority == h),
             _ => false,
         };
-        if !same_origin {
+        // D11: a sandboxed HTML preview has an opaque origin, and some browsers (measured: Chromium 156)
+        // send `Origin: null` when it loads its own CSS, scripts and images. Accept that for reading
+        // `/files/*` only; `/api/*`, the event stream and every other method stay strictly same-origin.
+        let null_origin_for_files = origin.as_deref() == Some("null")
+            && (req.method() == Method::GET || req.method() == Method::HEAD)
+            && req.uri().path().starts_with("/files/");
+        if !same_origin && !null_origin_for_files {
             log_denied("origin-header", req.method(), &req.uri().to_string());
             return StatusCode::FORBIDDEN.into_response();
         }

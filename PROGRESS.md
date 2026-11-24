@@ -92,3 +92,9 @@ Incident: my first AC-63 and AC-68 implementation assumed the `open` crate looks
 
 - A full macOS run found one failure that single-milestone runs had hidden: AC-26c started its `--host 0.0.0.0` server on 4101, which the AC-25 include-hidden server still held, so the request reached the loopback-mode server and got 403. AC-26c and AC-27 now use ports of their own (4118, 4119); PRD v1.4.10.
 - Linux: `rust:1` container, uid 1000, `--sysctl net.ipv4.ip_unprivileged_port_start=1024` (needed for AC-69), container-local copy of the repo. Non-browser rows run in the container; the 23 browser rows run through `tests/linux-browser.sh` (server in the container, `--network host`, Chrome on the host); AC-16 runs in `node:22-slim` (pulled with the user's approval) because `rust:1` has no node.
+
+## T-5.3 single-container Linux run, and D11
+
+The goal's closing check asks for the Linux half in one Docker run. `tests/linux-suite.sh` does that: one `rust:1` container builds the project as uid 1000, installs Chromium with apt (approved by the user), takes the node 22 binary from the approved `node:22-slim` image, runs `make test` and the whole suite. Its first run gave 84 PASS and 1 FAIL (AC-06).
+
+**Finding:** Chromium 156 sends `Origin: null` (with `Sec-Fetch-Site: cross-site`, mode `no-cors`) when a sandboxed HTML preview loads its own CSS, scripts and images. The strict Origin rule of PRD 12.1 answered 403, so those assets broke. Every earlier browser run used Google Chrome 158 on macOS, which does not send it. The fix relaxes a security rule, so the user was asked and approved option A: D11, `Origin: null` accepted for GET and HEAD on `/files/*` only; `/api/*` and the event stream stay strict. AC-26a and AC-26b test both directions and were mutation checked.

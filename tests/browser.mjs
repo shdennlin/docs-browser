@@ -108,10 +108,14 @@ class CDP {
 async function launchChrome() {
   if (!existsSync(CHROME)) throw new Error('Chrome not found at ' + CHROME);
   const dir = mkdtempSync(join(tmpdir(), 'docs-browser-chrome-'));
-  const proc = spawn(CHROME, [
+  const flags = [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${dir}`, '--no-first-run',
     '--no-default-browser-check', '--disable-gpu', '--no-proxy-server', '--window-size=1280,800', 'about:blank',
-  ], { stdio: 'ignore' });
+  ];
+  // Inside a Linux container Chromium cannot create its sandbox and has a tiny /dev/shm. These flags are
+  // used for the throw-away test browser only, never on a desktop.
+  if (process.platform === 'linux') flags.splice(1, 0, '--no-sandbox', '--disable-dev-shm-usage');
+  const proc = spawn(CHROME, flags, { stdio: 'ignore' });
   const portFile = join(dir, 'DevToolsActivePort');
   const ok = await waitFor(() => existsSync(portFile), 15000, 100);
   if (!ok) { proc.kill(); throw new Error('Chrome did not start'); }
