@@ -726,6 +726,9 @@ checks['AC-75'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=docs/code.md');
   try {
     const q = (e) => p.ev(e);
+    const tops = await q("Array.from(document.querySelectorAll('#mode-row button')).map(function(b){return Math.round(b.getBoundingClientRect().top)})");
+    const rowFits = await q("(function(){var r=document.getElementById('mode-row');return r.scrollWidth <= r.clientWidth})()");
+    const oneLine = tops.length === 5 && Math.max(...tops) - Math.min(...tops) <= 2 && rowFits;
     // outline: hidden panel, hover/pin shows it, entries scroll
     const outline = await q("(function(){var w=document.getElementById('outline-wrap');var a=Array.from(document.querySelectorAll('#outline a')).map(function(x){return x.textContent+'|'+x.className});return {shown:!w.hidden,a:a,panel:getComputedStyle(document.getElementById('outline')).display}})()");
     await q("document.getElementById('outline-toggle').click(); true");
@@ -779,14 +782,55 @@ checks['AC-75'] = async (cdp) => {
     await p.goto('/?file=docs/flow.html'); await p.ready();
     await waitFor(() => p.ev("!!document.querySelector('iframe.html-frame')"), 5000, 50);
     const full = await q("(function(){var m=document.getElementById('main').getBoundingClientRect(),f=document.querySelector('iframe.html-frame').getBoundingClientRect();return {dw:Math.round(m.width-f.width),dl:Math.round(f.left-m.left),dt:Math.round(f.top-m.top),outlineHidden:document.getElementById('outline-wrap').hidden}})()");
-    const ok = outline.shown && outline.a.length >= 2 && outline.a.some((x) => x.endsWith('|l2')) && outline.panel === 'none'
+    const ok = oneLine && outline.shown && outline.a.length >= 2 && outline.a.some((x) => x.endsWith('|l2')) && outline.panel === 'none'
       && pinned === 'block' && hashAfter.length > 1 && docsOpen === true && docsClosed === 0
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
       && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, colours, spy, side, dbg, icons, full })];
+    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, dbg, icons, full })];
+  } finally { await p.close(); }
+};
+
+// ---- AC-76: light/dark toggle, quote contrast
+checks['AC-76'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    const bg = () => q("getComputedStyle(document.body).backgroundColor");
+    const lum = (rgb) => { const [r, g, b] = rgb.match(/\d+/g).map(Number).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+    await p.media('light');
+    await p.goto('/?file=README.md'); await p.ready();
+    const light0 = await bg();
+    await q("localStorage.removeItem('docs-browser.theme'); true");
+    await q("document.getElementById('theme-toggle').click(); true");           // light -> dark
+    const dark1 = await bg();
+    const links = await q("({l:document.getElementById('hl-light').media,d:document.getElementById('hl-dark').media})");
+    await q("document.getElementById('theme-toggle').click(); true");           // dark -> light
+    const light2 = await bg();
+    await q("document.getElementById('theme-toggle').click(); true");           // dark again, then reload
+    await p.goto('/?file=docs/code.md'); await p.ready();
+    const afterReload = await bg();
+    const stored = await q("localStorage.getItem('docs-browser.theme')");
+    // quote contrast in dark
+    await q("(function(){var b=document.createElement('blockquote');b.textContent='quote';document.getElementById('preview').appendChild(b);return true})()");
+    const qc = await q("(function(){var b=document.querySelector('#preview blockquote');return [getComputedStyle(b).color,getComputedStyle(document.body).backgroundColor]})()");
+    // reset follows the system again (system is light here)
+    await q("document.getElementById('settings-open').click(); document.getElementById('settings-reset').click(); true");
+    const afterReset = await bg();
+    const storedAfter = await q("localStorage.getItem('docs-browser.theme')");
+    // a bad stored value is ignored
+    await q("localStorage.setItem('docs-browser.theme','purple'); true");
+    await p.goto('/?file=README.md'); await p.ready();
+    const bad = await q("document.documentElement.dataset.theme || 'none'");
+    await q("localStorage.clear(); true");
+    const D = 'rgb(40, 42, 54)';
+    const ok = light0 !== D && dark1 === D && links.l === 'not all' && links.d === 'all' && light2 === 'rgb(255, 255, 255)'
+      && afterReload === D && stored === 'dark' && ratio(qc[0], qc[1]) >= 7
+      && afterReset === 'rgb(255, 255, 255)' && storedAfter === null && bad === 'none';
+    return [ok, JSON.stringify({ light0, dark1, links, light2, afterReload, stored, qc, ratio: ratio(qc[0], qc[1]).toFixed(1), afterReset, storedAfter, bad })];
   } finally { await p.close(); }
 };
 

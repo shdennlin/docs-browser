@@ -91,5 +91,5 @@ python3 tests/suite.py --milestone all   # every acceptance criterion of PRD sec
 
 - Type in the box above the file list to filter by file name; switch to `Contents` to search inside the Markdown and HTML files. `/` focuses the box.
 - `Expand all` / `Collapse all` open or close every folder; each file carries an `MD` or `HTML` badge.
-- In dark mode the page uses the Dracula palette with rainbow headings; light mode is unchanged.
+- In dark mode the page uses the Dracula palette with rainbow headings; light mode is unchanged. The sun/moon button switches between light and dark (remembered); without it the page follows the system.
 - Hover a folder for `⊞` / `⊟` (open or close everything inside it); `Wrap` toggles long names; a floating `☰` outline lists the headings; `⚙` opens the settings. HTML pages fill the right panel.

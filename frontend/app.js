@@ -104,10 +104,31 @@
 
   // Dark mode uses the Dracula palette for diagrams (light mode keeps Mermaid's default theme).
   var darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  var THEME_KEY = 'docs-browser.theme';
+  function effectiveDark() {
+    var t = document.documentElement.dataset.theme;
+    return t === 'dark' || (t !== 'light' && darkQuery.matches);
+  }
+  // `choice` is 'light', 'dark' or null (follow the system).
+  function applyTheme(choice, save) {
+    if (choice === 'light' || choice === 'dark') document.documentElement.dataset.theme = choice;
+    else delete document.documentElement.dataset.theme;
+    var hl = { light: document.getElementById('hl-light'), dark: document.getElementById('hl-dark') };
+    if (choice) { hl.light.media = choice === 'light' ? 'all' : 'not all'; hl.dark.media = choice === 'dark' ? 'all' : 'not all'; }
+    else { hl.light.media = '(prefers-color-scheme: light)'; hl.dark.media = '(prefers-color-scheme: dark)'; }
+    var btn = document.getElementById('theme-toggle');
+    if (btn) {
+      btn.textContent = effectiveDark() ? '\u263E' : '\u2606'.replace('\u2606', '\u263C');
+      btn.title = effectiveDark() ? 'Dark theme: switch to light' : 'Light theme: switch to dark';
+      btn.setAttribute('aria-pressed', String(effectiveDark()));
+    }
+    if (save) { try { if (choice) localStorage.setItem(THEME_KEY, choice); else localStorage.removeItem(THEME_KEY); } catch (e) { /* storage may be off */ } }
+  }
+  (function () { var t = null; try { t = localStorage.getItem(THEME_KEY); } catch (e) { /* storage may be off */ } applyTheme(t === 'light' || t === 'dark' ? t : null, false); })();
   function initMermaid() {
     if (!window.mermaid) return;
     var cfg = { startOnLoad: false, securityLevel: 'strict' };
-    if (darkQuery.matches) {
+    if (effectiveDark()) {
       cfg.theme = 'base';
       cfg.themeVariables = {
         darkMode: true, background: '#282a36', fontFamily: 'inherit',
@@ -127,7 +148,9 @@
   }
   initMermaid();
   var themeChange = function () { initMermaid(); if (state.current && !/\.html?$/i.test(state.current)) reloadCurrent(); };
-  if (darkQuery.addEventListener) darkQuery.addEventListener('change', themeChange);
+  function switchTheme(choice, save) { applyTheme(choice, save); themeChange(); }
+  if (darkQuery.addEventListener) darkQuery.addEventListener('change', function () { if (!document.documentElement.dataset.theme) { applyTheme(null, false); themeChange(); } });
+  document.getElementById('theme-toggle').addEventListener('click', function () { switchTheme(effectiveDark() ? 'light' : 'dark', true); });
 
   // ------------------------------------------------------------ small DOM helpers
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
@@ -674,7 +697,7 @@
   $('#set-wide').addEventListener('change', function (e) { setWide(e.target.checked, true); });
   $('#settings-reset').addEventListener('click', function () {
     [WRAP_KEY, OUTLINE_KEY, WIDE_KEY, SIDEBAR_KEY].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
-    setWrap(true, false); setPinned(false, false); setWide(false, false); setSidebar(L.SIDEBAR_DEFAULT, false);
+    setWrap(true, false); setPinned(false, false); setWide(false, false); setSidebar(L.SIDEBAR_DEFAULT, false); switchTheme(null, true);
   });
 
   // ------------------------------------------------------------ search and folder buttons (PRD 7.3)

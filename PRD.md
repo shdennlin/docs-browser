@@ -27,6 +27,8 @@
 | v1.4.17 (2026-11-25) | Release 0.1.3: includes everything of v1.4.14 to v1.4.16 (sidebar, theme, search, badges, expand/collapse, default port 4747); `Cargo.toml` and the README install tag updated |
 | v1.4.18 (2026-11-25) | Added on request: per-folder expand/collapse buttons, wrap toggle, HTML fills the right panel, floating outline, settings dialog (7.3, 7.4; AC-75, T-3.7) |
 | v1.4.19 (2026-11-25) | Outline entries use the heading colours and the current section is highlighted; folder icons; fix: selecting a file no longer scrolls the list sideways when names do not wrap (7.3, 7.4; AC-75) |
+| v1.4.20 (2026-11-25) | Light/dark toggle button (remembered; reset follows the system again) and lighter quote text, 7:1 contrast (6 Theme; AC-76) |
+| v1.4.21 (2026-11-25) | The list controls fit on one line: expand all, collapse all and wrap became icon buttons (7.3; AC-75) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -210,7 +212,7 @@ Render: headings, tables, task lists, code blocks, links, images, GitHub-flavore
 
 ### Theme
 
-Light mode keeps the system look. When the system is in dark mode the page uses the Dracula palette: background `#282a36`, text `#f8f8f2`, links `#8be9fd`, code blocks with the Dracula highlight.js style, Mermaid diagrams with Dracula colours, and rainbow headings (h1 to h6 in red, orange, yellow, green, cyan, purple). A change of the system setting while the page is open re-renders the Mermaid diagrams.
+Light mode keeps the system look. When the system is in dark mode the page uses the Dracula palette: background `#282a36`, text `#f8f8f2`, links `#8be9fd`, code blocks with the Dracula highlight.js style, Mermaid diagrams with Dracula colours, and rainbow headings (h1 to h6 in red, orange, yellow, green, cyan, purple). A change of the system setting while the page is open re-renders the Mermaid diagrams. The sun/moon button next to the settings button switches between light and dark and the choice is remembered in `localStorage` (`docs-browser.theme`, values `light` or `dark`, anything else is ignored); until it is pressed, and after `Reset to defaults`, the page follows the system. Quote text has a contrast of at least 7:1 against the page.
 
 ### Mermaid
 
@@ -293,14 +295,15 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 - `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
 - Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
 - Each folder shows two small buttons on hover: `⊞` opens the folder and everything inside it, `⊟` closes them. Clicking a button does not toggle the folder itself.
-- A `Wrap` button switches long names between wrapping and one line per name with sideways scrolling. Selecting a file only scrolls the list vertically (never sideways), and the search box and buttons stay in view while the list is scrolled sideways.
+- The five controls (`Names`, `Contents`, expand all `⊞`, collapse all `⊟`, wrap `↵`) sit on one line in the default 300 px list.
+- The wrap button switches long names between wrapping and one line per name with sideways scrolling. Selecting a file only scrolls the list vertically (never sideways), and the search box and buttons stay in view while the list is scrolled sideways.
 - Each folder has a small icon, closed or open.
 
 ### 7.4 Outline and settings
 
 - **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted); clicking a heading scrolls to it and sets the `#hash`. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
-- **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. There is no theme choice: the theme follows the system.
+- **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
 The server searches on demand, with no index. It walks the listed `.md`, `.markdown`, `.html` and `.htm` files, resolving every one through the resolver (§12.2) with the `/files/*` rules, so hidden folders, the ignore list, out-of-root symlinks and other extensions are never searched. A file reachable through several in-root symlinks is searched once, under its first listed path. Matching is a plain substring test per line, ignoring ASCII case (other letters are matched exactly). HTML is searched by its text with the tags removed. Limits: query 2 to 200 characters, files over 5 MiB skipped, at most 100 result files, 3 lines per file, 256 MiB read per search; hitting a limit sets `truncated`.
 
@@ -721,6 +724,7 @@ site/
 | AC-73 | M3 | §7.3 name filter | Browser: type `DOCS/ARCH`, `docs flow`, `zzzz-nothing`, then clear; press `/` | Only `docs/architecture.md` with its folder open; only `docs/flow.html`; "No file name matches"; the full list returns with the folders closed again; the box has focus after `/` |
 | AC-74 | M3 | §7.3, §11 content search | Browser, `Contents` switch: type `x`, `ZEBRA-needle`, click the result, type a text nobody has; `fetch('/api/search?q=a')`, `fetch('/api/search?q=hidden')` | "at least 2 characters"; one result `docs/search-target.md`, line `3:`, hit `zebra-needle`, tree hidden; the preview opens and the URL is `?file=docs/search-target.md`; "No file contains"; status `400`; nothing from `.hidden/` |
 | AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin), `Section n` entries in the heading colours with exactly one highlighted: the section scrolled to; a folder icon differs between open and closed; with `Wrap` off and a 180 px list, selecting a wide row leaves the list at `scrollLeft` 0 and the toolbar in place; a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
+| AC-76 | M3 | §6 theme toggle, quote contrast | Browser with the system in light mode: press the theme button, again, again and reload; `Reset to defaults`; store `purple` and reload | Dark `rgb(40, 42, 54)`, then light, then dark again and still dark after the reload (`docs-browser.theme` is `dark`); the highlight.js sheets switch with it; quote text against the page is at least 7:1; reset gives light and removes the stored value; the bad value is ignored |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -822,6 +826,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7 tree, caps | AC-02, AC-14a/b, UT-08, UT-09, UT-11 |
 | §7.3 name filter, search, badges | AC-72, AC-73, AC-74, UT-17, UT-18 |
 | §7.3 folder buttons, wrap; §7.4 outline, settings | AC-75 |
+| §6 theme toggle | AC-76 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -843,7 +848,6 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 - Polling fallback when the OS watcher is unavailable
 - Browser automation for all browser checks in §13
 - Table of contents
-- A manual light/dark switch (the page follows the system setting)
 - Copy code button
 - Image / PDF preview
 - JSON / YAML preview
@@ -928,6 +932,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.5 | Resizable sidebar (added after M5, on request): divider, drag, keyboard, double click, limits, `localStorage` | T-3.2a | AC-70 |
 | T-3.6 | Dracula theme, rainbow headings, `MD`/`HTML` badges, expand/collapse all, name filter, full-text search and `GET /api/search`, default port 4747 (added after M5, on request) | T-3.5 | AC-71, AC-72, AC-73, AC-74, UT-17, UT-18, AC-64 |
 | T-3.7 | Folder buttons, wrap toggle, full-panel HTML, floating outline, settings dialog (added on request) | T-3.6 | AC-75 |
+| T-3.8 | Light/dark toggle button and quote contrast (added on request) | T-3.7 | AC-76 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 
