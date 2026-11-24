@@ -46,6 +46,7 @@
 | v1.4.36 (2026-11-25) | Release 0.2.0: includes v1.4.34 (dark Mermaid accents) and v1.4.35 (full-screen Mermaid viewer) on top of 0.1.4, plus the README screenshots and the demo docs; `Cargo.toml` and the README install tag updated |
 | v1.4.37 (2026-11-25) | The running server's version is shown at the right end of the bar at the bottom of the file list, from the new `GET /api/version` (7.3, 11; AC-86); the README install command uses the real GitHub URL |
 | v1.4.38 (2026-11-25) | A status bar under the preview shows the created and modified times and, inside a git repository, the branch, the last commit of the file and whether it has uncommitted changes, from the new `GET /api/info` (7.3, 11; AC-87, UT-19, UT-20); the diagram's full-screen button is a text glyph instead of an `<svg>` (7.4; fixes AC-04); AC-71 follows the dark accents |
+| v1.4.39 (2026-11-25) | Release 0.3.0: includes v1.4.34 to v1.4.38 (dark Mermaid accents, full-screen Mermaid viewer, version in the footer, file information bar). Security: `GET /api/info` no longer runs `git status`, which executes a repository's configured clean filters; `dirty` is computed with filter-free commands (UT-21). `Cargo.toml` and the README install tag updated ; the Linux container suite passes all 108 rows |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -605,7 +606,7 @@ Returns `200` with `{ "version": "0.2.0" }`, the version in `Cargo.toml` that th
 GET /api/info?path=docs/architecture.md
 ```
 
-The path is resolved with the `/files/*` rules (§12.2), so hidden folders, the ignore list, out-of-root symlinks and directories answer `404`. Returns `200` with `{ "size", "modified", "created", "git" }`: times are milliseconds since the Unix epoch, `created` is the birth time and is `null` where the platform does not record it, `git` is `null` outside a repository, otherwise `{ "branch", "commit", "dirty" }` with `commit` either `null` (never committed) or `{ "hash", "time", "subject" }` (seconds, subject cut to 200 characters; no author or e-mail). `branch` is the short hash on a detached HEAD. Git is optional: the server runs `git` with a 2 second limit, without a terminal prompt or optional locks; when git is missing, slow or failing the `git` part is `null`.
+The path is resolved with the `/files/*` rules (§12.2), so hidden folders, the ignore list, out-of-root symlinks and directories answer `404`. Returns `200` with `{ "size", "modified", "created", "git" }`: times are milliseconds since the Unix epoch, `created` is the birth time and is `null` where the platform does not record it, `git` is `null` outside a repository, otherwise `{ "branch", "commit", "dirty" }` with `commit` either `null` (never committed) or `{ "hash", "time", "subject" }` (seconds, subject cut to 200 characters; no author or e-mail). `branch` is the short hash on a detached HEAD. Git is optional: the server runs `git` with a 2 second limit, without a terminal prompt or optional locks; when git is missing, slow or failing the `git` part is `null`. `dirty` is worked out without `git status` or `git diff`, because those run the clean filters a repository names in its config (`filter.<name>.clean` is an arbitrary command) and a folder from an untrusted clone could then run code: the file's hash (`git hash-object --no-filters`) is compared with its blob in `HEAD`, and an untracked file counts as changed unless `git check-ignore` says it is ignored. Consequently a file whose line endings git converts (`core.autocrlf`, `eol` attributes) can show as changed.
 
 ### Deep-link route
 
@@ -870,6 +871,7 @@ site/
 | UT-18 | M3 | Search query and limits | Query under 2 and over 200 characters refused, trimmed otherwise; 100 files then `truncated` |
 | UT-19 | M3 | File information, plain folder | A file outside any repository has size, modified time and no `git`; a directory and a missing path give nothing |
 | UT-20 | M3 | File information, repository | In a fresh repository on branch `trunk`: an untracked file shows the branch, no commit and `dirty`; after a commit it shows the commit subject, a time and not `dirty`; an edit makes it `dirty` again |
+| UT-21 | M3 | File information, untrusted repository | A repository whose config names a clean filter that creates a marker file: reading the file's information never creates the marker, still reports the file as changed after an edit and as unchanged after it is restored |
 
 Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
 
@@ -895,7 +897,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.4 Mermaid colours (dark) | AC-84 |
 | §7.4 full-screen diagram | AC-85 |
 | §7.3, §11 version display | AC-86 |
-| §7.3, §11 file information | AC-87, UT-19, UT-20 |
+| §7.3, §11 file information | AC-87, UT-19, UT-20, UT-21 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -1010,7 +1012,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.14 | Dark Mermaid: a distinct Dracula accent per plain node and per participant (added on request) | T-3.13 | AC-84 |
 | T-3.15 | Full-screen Mermaid viewer with drag and wheel zoom (added on request) | T-3.14 | AC-85 |
 | T-3.16 | Version in the footer and `GET /api/version` (added on request) | T-3.15 | AC-86 |
-| T-3.17 | File information status bar and `GET /api/info` (times and optional git facts, added on request) | T-3.16 | AC-87, UT-19, UT-20 |
+| T-3.17 | File information status bar and `GET /api/info` (times and optional git facts, added on request) | T-3.16 | AC-87, UT-19, UT-20, UT-21 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

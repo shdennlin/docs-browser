@@ -85,6 +85,25 @@ fn git(dir: &Path, args: &[&str]) -> Option<String> {
     Some(out.trim().to_string())
 }
 
+/// Whether the file differs from `HEAD` (an untracked file that is not ignored also counts).
+///
+/// This deliberately avoids `git status` and `git diff`: they run the clean filters named by a
+/// repository's `.gitattributes` and config (`filter.<name>.clean` is an arbitrary command), so reading a
+/// folder from an untrusted clone could run code. `rev-parse`, `hash-object --no-filters` and
+/// `check-ignore` never run configured commands. The price: a file whose line endings git converts
+/// (`core.autocrlf`, `eol` attributes) can show as changed.
+fn is_dirty(dir: &Path, name: &str) -> bool {
+    let spec = format!("HEAD:./{name}");
+    match git(dir, &["rev-parse", "-q", "--verify", &spec]) {
+        Some(blob) => match git(dir, &["hash-object", "--no-filters", "--", name]) {
+            Some(now) => now != blob,
+            None => false,
+        },
+        // not in HEAD: untracked (changed) unless ignored; `check-ignore -q` exits 0 when ignored
+        None => git(dir, &["check-ignore", "-q", "--", name]).is_none(),
+    }
+}
+
 fn git_info(path: &Path) -> Option<GitInfo> {
     let dir = path.parent()?;
     let name = path.file_name()?.to_str()?;
@@ -101,8 +120,7 @@ fn git_info(path: &Path) -> Option<GitInfo> {
         let subject: String = parts.next().unwrap_or("").chars().take(MAX_SUBJECT).collect();
         (!hash.is_empty()).then_some(CommitInfo { hash, time, subject })
     });
-    let dirty = git(dir, &["status", "--porcelain", "--", name]).is_some_and(|s| !s.is_empty());
-    Some(GitInfo { branch, commit, dirty })
+    Some(GitInfo { branch, commit, dirty: is_dirty(dir, name) })
 }
 
 /// Reads the facts for a file that the resolver has already approved.
@@ -144,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_folder_has_times_and_no_git() {
+    fn ut_19_plain_folder_has_times_and_no_git() {
         let d = tmp("plain");
         let f = d.join("a.md");
         fs::write(&f, "hello").unwrap();
@@ -159,7 +177,32 @@ mod tests {
     }
 
     #[test]
-    fn repository_reports_branch_commit_and_dirty() {
+    fn ut_21_a_repository_filter_command_is_never_run() {
+        if Command::new("git").arg("--version").output().is_err() {
+            return;
+        }
+        let d = tmp("filter");
+        sh(&d, &["init", "-q", "-b", "trunk"]);
+        fs::write(d.join(".gitattributes"), "*.md filter=pwn\n").unwrap();
+        let f = d.join("a.md");
+        fs::write(&f, "# note\n").unwrap();
+        sh(&d, &["add", "-A"]);
+        sh(&d, &["commit", "-q", "-m", "init"]);
+        let marker = d.join("PWNED");
+        let clean = format!("sh -c 'touch {}; cat'", marker.display());
+        sh(&d, &["config", "filter.pwn.clean", &clean]);
+        fs::write(&f, "# nota\n").unwrap(); // same size, new content: git has to read the file
+        let g = read(&f).unwrap().git.unwrap();
+        assert!(g.dirty, "the change is still noticed");
+        assert!(!marker.exists(), "the filter command ran");
+        fs::write(&f, "# note\n").unwrap(); // back to the committed content
+        assert!(!read(&f).unwrap().git.unwrap().dirty);
+        assert!(!marker.exists(), "the filter command ran");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn ut_20_repository_reports_branch_commit_and_dirty() {
         if Command::new("git").arg("--version").output().is_err() {
             return; // git is optional
         }
