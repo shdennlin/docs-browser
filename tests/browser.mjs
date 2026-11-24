@@ -721,6 +721,50 @@ checks['AC-74'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-75: folder buttons, full-panel HTML, outline, wrap toggle, settings
+checks['AC-75'] = async (cdp) => {
+  const p = await openPage(cdp, '/?file=docs/code.md');
+  try {
+    const q = (e) => p.ev(e);
+    // outline: hidden panel, hover/pin shows it, entries scroll
+    const outline = await q("(function(){var w=document.getElementById('outline-wrap');var a=Array.from(document.querySelectorAll('#outline a')).map(function(x){return x.textContent+'|'+x.className});return {shown:!w.hidden,a:a,panel:getComputedStyle(document.getElementById('outline')).display}})()");
+    await q("document.getElementById('outline-toggle').click(); true");
+    const pinned = await q("getComputedStyle(document.getElementById('outline')).display");
+    await q("document.querySelector('#outline a.l2').click(); true");
+    const hashAfter = await q('location.hash');
+    await q("document.getElementById('outline-toggle').click(); true");
+    // folder buttons: collapse all, then expand only docs/ subtree
+    await q("document.getElementById('collapse-all').click(); true");
+    await q("document.querySelector('#tree details[data-dir=\"docs\"] > summary .folder-btn[data-action=expand]').click(); true");
+    const docsOpen = await q("(function(){var d=document.querySelector('#tree details[data-dir=\"docs\"]');return d.open && d.querySelectorAll('details[open]').length === d.querySelectorAll('details').length})()");
+    await q("document.querySelector('#tree details[data-dir=\"docs\"] > summary .folder-btn[data-action=collapse]').click(); true");
+    const docsClosed = await q("document.querySelectorAll('#tree details[open]').length");
+    // wrap toggle
+    const wrap0 = await q("getComputedStyle(document.querySelector('#tree a')).whiteSpace");
+    await q("document.getElementById('wrap-toggle').click(); true");
+    const wrap1 = await q("getComputedStyle(document.querySelector('#tree a')).whiteSpace");
+    // settings: open, uncheck wrap sync, full width markdown, reset
+    await q("document.getElementById('settings-open').click(); true");
+    const dlg = await q("({open:!document.getElementById('settings').hidden, wrapChecked:document.getElementById('set-wrap').checked})");
+    await q("document.getElementById('set-wide').click(); true");
+    const wide = await q("getComputedStyle(document.getElementById('preview')).maxWidth");
+    await q("document.getElementById('settings-reset').click(); true");
+    const afterReset = await q("({wrap:getComputedStyle(document.querySelector('#tree a')).whiteSpace, max:getComputedStyle(document.getElementById('preview')).maxWidth, ls:localStorage.getItem('docs-browser.fullWidth')})");
+    await p.key('Escape', 'Escape', 27);
+    const closed = await q("document.getElementById('settings').hidden");
+    // HTML fills the right panel
+    await p.goto('/?file=docs/flow.html'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('iframe.html-frame')"), 5000, 50);
+    const full = await q("(function(){var m=document.getElementById('main').getBoundingClientRect(),f=document.querySelector('iframe.html-frame').getBoundingClientRect();return {dw:Math.round(m.width-f.width),dl:Math.round(f.left-m.left),dt:Math.round(f.top-m.top),outlineHidden:document.getElementById('outline-wrap').hidden}})()");
+    const ok = outline.shown && outline.a.length >= 2 && outline.a.some((x) => x.endsWith('|l2')) && outline.panel === 'none'
+      && pinned === 'block' && hashAfter.length > 1 && docsOpen === true && docsClosed === 0
+      && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
+      && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
+      && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
+    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, full })];
+  } finally { await p.close(); }
+};
+
 // ---------------------------------------------------------------- run
 const wanted = IDS.length ? IDS : Object.keys(checks);
 const out = [];

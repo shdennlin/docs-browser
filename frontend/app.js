@@ -180,7 +180,26 @@
           if (details.open) state.expanded.add(dirPath); else state.expanded.delete(dirPath);
         });
         var summary = document.createElement('summary');
-        summary.textContent = e.name;
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'folder-name';
+        nameSpan.textContent = e.name;
+        summary.appendChild(nameSpan);
+        [['expand', '\u229E', 'Open this folder and everything in it'], ['collapse', '\u229F', 'Close this folder and everything in it']].forEach(function (b) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'folder-btn';
+          btn.dataset.action = b[0];
+          btn.textContent = b[1];
+          btn.title = b[2];
+          btn.setAttribute('aria-label', b[2] + ': ' + dirPath);
+          btn.addEventListener('click', function (ev) {
+            ev.preventDefault(); ev.stopPropagation(); // do not toggle the folder itself
+            var sub = [dirPath].concat(L.collectDirs(e.children || [], dirPath));
+            sub.forEach(function (d) { if (b[0] === 'expand') state.expanded.add(d); else state.expanded.delete(d); });
+            renderTree();
+          });
+          summary.appendChild(btn);
+        });
         details.appendChild(summary);
         details.appendChild(buildList(e.children || [], dirPath));
         li.appendChild(details);
@@ -565,6 +584,75 @@
     preferredWidth = saved === null ? L.SIDEBAR_DEFAULT : saved;
     renderSidebar(false);
   })();
+
+  // ------------------------------------------------------------ outline (PRD 7.4)
+  var OUTLINE_KEY = 'docs-browser.outlinePinned';
+  var outlineWrap = $('#outline-wrap');
+  var outlineEl = $('#outline');
+  var outlineBtn = $('#outline-toggle');
+  function updateOutline() {
+    clear(outlineEl);
+    var heads = els.preview.classList.contains('wide') ? [] : els.preview.querySelectorAll('h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]');
+    outlineWrap.hidden = heads.length === 0;
+    Array.prototype.forEach.call(heads, function (h) {
+      var hash = h.id.slice(ID_PREFIX.length);
+      var a = document.createElement('a');
+      a.className = 'l' + h.tagName.charAt(1);
+      a.href = L.buildUrl(state.current, hash);
+      a.dataset.anchor = hash;
+      a.textContent = h.textContent;
+      outlineEl.appendChild(a);
+    });
+  }
+  var outlineTimer = null;
+  new MutationObserver(function () { clearTimeout(outlineTimer); outlineTimer = setTimeout(updateOutline, 0); })
+    .observe(els.preview, { childList: true });
+  function setPinned(on, save) {
+    outlineWrap.classList.toggle('pinned', on);
+    outlineBtn.setAttribute('aria-pressed', String(on));
+    var co = $('#set-outline'); if (co) co.checked = on;
+    if (save) { try { localStorage.setItem(OUTLINE_KEY, on ? '1' : '0'); } catch (e) { /* storage may be off */ } }
+  }
+  outlineBtn.addEventListener('click', function () { setPinned(!outlineWrap.classList.contains('pinned'), true); });
+  try { setPinned(localStorage.getItem(OUTLINE_KEY) === '1', false); } catch (e) { /* storage may be off */ }
+
+  // ------------------------------------------------------------ wrap toggle for the left panel
+  var WRAP_KEY = 'docs-browser.wrapNames';
+  var wrapBtn = $('#wrap-toggle');
+  function setWrap(on, save) {
+    $('#sidebar').classList.toggle('nowrap', !on);
+    wrapBtn.setAttribute('aria-pressed', String(on));
+    var cw = $('#set-wrap'); if (cw) cw.checked = on;
+    if (save) { try { localStorage.setItem(WRAP_KEY, on ? '1' : '0'); } catch (e) { /* storage may be off */ } }
+  }
+  wrapBtn.addEventListener('click', function () { setWrap(wrapBtn.getAttribute('aria-pressed') !== 'true', true); });
+  try { setWrap(localStorage.getItem(WRAP_KEY) !== '0', false); } catch (e) { /* storage may be off */ }
+
+  // ------------------------------------------------------------ settings (PRD 5, Settings)
+  var WIDE_KEY = 'docs-browser.fullWidth';
+  var settingsEl = $('#settings');
+  var lastFocus = null;
+  function setWide(on, save) {
+    document.body.classList.toggle('fullwidth', on);
+    $('#set-wide').checked = on;
+    if (save) { try { localStorage.setItem(WIDE_KEY, on ? '1' : '0'); } catch (e) { /* storage may be off */ } }
+  }
+  try { setWide(localStorage.getItem(WIDE_KEY) === '1', false); } catch (e) { /* storage may be off */ }
+  $('#set-wrap').checked = wrapBtn.getAttribute('aria-pressed') === 'true';
+  $('#set-outline').checked = outlineWrap.classList.contains('pinned');
+  function openSettings() { lastFocus = document.activeElement; settingsEl.hidden = false; $('#settings-close').focus(); }
+  function closeSettings() { settingsEl.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+  $('#settings-open').addEventListener('click', openSettings);
+  $('#settings-close').addEventListener('click', closeSettings);
+  settingsEl.addEventListener('click', function (e) { if (e.target === settingsEl) closeSettings(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !settingsEl.hidden) closeSettings(); });
+  $('#set-wrap').addEventListener('change', function (e) { setWrap(e.target.checked, true); });
+  $('#set-outline').addEventListener('change', function (e) { setPinned(e.target.checked, true); });
+  $('#set-wide').addEventListener('change', function (e) { setWide(e.target.checked, true); });
+  $('#settings-reset').addEventListener('click', function () {
+    [WRAP_KEY, OUTLINE_KEY, WIDE_KEY, SIDEBAR_KEY].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
+    setWrap(true, false); setPinned(false, false); setWide(false, false); setSidebar(L.SIDEBAR_DEFAULT, false);
+  });
 
   // ------------------------------------------------------------ search and folder buttons (PRD 7.3)
   var searchInput = $('#search');

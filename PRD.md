@@ -25,6 +25,7 @@
 | v1.4.15 (2026-11-24) | Sidebar review fixes: a drag follows one pointer and also ends on lost capture and window blur; no jump at the grab point; the chosen width survives a smaller window; a stored value must be a strict integer; AC-70 checks all of it (5) |
 | v1.4.16 (2026-11-24) | Added on request: Dracula theme in dark mode (page, Markdown, code, Mermaid, rainbow headings), `MD`/`HTML` badges, expand/collapse all, file name filter and full-text search (`GET /api/search`, 7.3, 11), default port 4747 instead of 3000 (4 browser ACs, 2 unit tests, T-3.6) |
 | v1.4.17 (2026-11-25) | Release 0.1.3: includes everything of v1.4.14 to v1.4.16 (sidebar, theme, search, badges, expand/collapse, default port 4747); `Cargo.toml` and the README install tag updated |
+| v1.4.18 (2026-11-25) | Added on request: per-folder expand/collapse buttons, wrap toggle, HTML fills the right panel, floating outline, settings dialog (7.3, 7.4; AC-75, T-3.7) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -290,6 +291,14 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 - **Contents:** typing (after 250 ms, at least two characters) calls `GET /api/search` and replaces the tree with a result list: the path, the number of matching lines and up to three lines with the hit marked and the line number. Clicking a result opens the file. The tree comes back when the switch returns to `Names`. A tree event while a content search is shown repeats the search.
 - `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
 - Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
+- Each folder shows two small buttons on hover: `⊞` opens the folder and everything inside it, `⊟` closes them. Clicking a button does not toggle the folder itself.
+- A `Wrap` button switches long names between wrapping and one line per name with sideways scrolling.
+
+### 7.4 Outline and settings
+
+- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level); clicking a heading scrolls to it and sets the `#hash`. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
+- **HTML pages** fill the whole right panel: no padding, border or rounded corners.
+- **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. There is no theme choice: the theme follows the system.
 
 The server searches on demand, with no index. It walks the listed `.md`, `.markdown`, `.html` and `.htm` files, resolving every one through the resolver (§12.2) with the `/files/*` rules, so hidden folders, the ignore list, out-of-root symlinks and other extensions are never searched. A file reachable through several in-root symlinks is searched once, under its first listed path. Matching is a plain substring test per line, ignoring ASCII case (other letters are matched exactly). HTML is searched by its text with the tags removed. Limits: query 2 to 200 characters, files over 5 MiB skipped, at most 100 result files, 3 lines per file, 256 MiB read per search; hitting a limit sets `truncated`.
 
@@ -709,6 +718,7 @@ site/
 | AC-72 | M3 | §7.3 badges, expand/collapse | Browser `/`: read the badges, click `Collapse all`, `Expand all`, `Collapse all` | `README.md` and Markdown files read `MD`, `docs/flow.html` reads `HTML`; the open folders go to 0, to all of them, to 0 |
 | AC-73 | M3 | §7.3 name filter | Browser: type `DOCS/ARCH`, `docs flow`, `zzzz-nothing`, then clear; press `/` | Only `docs/architecture.md` with its folder open; only `docs/flow.html`; "No file name matches"; the full list returns with the folders closed again; the box has focus after `/` |
 | AC-74 | M3 | §7.3, §11 content search | Browser, `Contents` switch: type `x`, `ZEBRA-needle`, click the result, type a text nobody has; `fetch('/api/search?q=a')`, `fetch('/api/search?q=hidden')` | "at least 2 characters"; one result `docs/search-target.md`, line `3:`, hit `zebra-needle`, tree hidden; the preview opens and the URL is `?file=docs/search-target.md`; "No file contains"; status `400`; nothing from `.hidden/` |
+| AC-75 | M3 | §7.3, §7.4 folder buttons, wrap, outline, settings, HTML panel | Browser: `docs/code.md` outline hover, pin and click; folder `⊞`/`⊟` on `docs`; `Wrap`; settings dialog (open, full width, reset, `Esc`); then `docs/flow.html` | Outline lists `Code sample` and `Second level` (hidden until hover or pin); a click sets `#second-level`; `⊞` opens `docs` and every subfolder, `⊟` closes them; names go `nowrap` and back; the dialog shows the wrap state, full width gives `max-width: none`, reset restores 920 px and wrapping, `Esc` closes it; the HTML iframe has the same width as the panel and sits at its top left, with no outline |
 | AC-17 | M3 | §6 image base | Browser `/?file=docs/subdir/rel.md` | The image's `naturalWidth > 0` |
 
 ### 13.2 Security
@@ -809,6 +819,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §6, §12.4 HTML isolation | AC-06, AC-07a/b |
 | §7 tree, caps | AC-02, AC-14a/b, UT-08, UT-09, UT-11 |
 | §7.3 name filter, search, badges | AC-72, AC-73, AC-74, UT-17, UT-18 |
+| §7.3 folder buttons, wrap; §7.4 outline, settings | AC-75 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |
@@ -914,6 +925,7 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | T-3.3 | Deep links, history, anchors, not-found, size and truncation states | T-3.2a | AC-12b, AC-14b, AC-40, AC-41, AC-42 |
 | T-3.5 | Resizable sidebar (added after M5, on request): divider, drag, keyboard, double click, limits, `localStorage` | T-3.2a | AC-70 |
 | T-3.6 | Dracula theme, rainbow headings, `MD`/`HTML` badges, expand/collapse all, name filter, full-text search and `GET /api/search`, default port 4747 (added after M5, on request) | T-3.5 | AC-71, AC-72, AC-73, AC-74, UT-17, UT-18, AC-64 |
+| T-3.7 | Folder buttons, wrap toggle, full-panel HTML, floating outline, settings dialog (added on request) | T-3.6 | AC-75 |
 | T-3.4 | Try a headless-Chrome script for the browser checks; keep it only if it is stable | T-3.3 | Script committed, or note explaining why not |
 | **CP-3** | Checkpoint review | T-3.1 to T-3.3 | No CRITICAL or HIGH |
 

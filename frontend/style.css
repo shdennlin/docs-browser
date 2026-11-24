@@ -70,7 +70,10 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 .banner { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--banner-bg); font-size: 13px; }
 #tree-banners .banner { margin: 0 4px 8px 0; }
 .state { margin: 48px auto; max-width: 520px; text-align: center; color: var(--muted); font-size: 16px; }
-.html-frame { width: 100%; height: calc(100vh - 80px); border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.html-frame { display: block; width: 100%; height: calc(100vh - 80px); border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+/* an HTML page fills the whole right panel */
+#main:has(#preview.wide) { padding: 0; }
+#preview.wide .html-frame { height: 100vh; border: 0; border-radius: 0; }
 
 /* Markdown */
 #preview { max-width: 920px; }
@@ -109,3 +112,41 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 #resizer:hover, #resizer:focus-visible, body.resizing #resizer { background: linear-gradient(to right, transparent 1px, var(--sel-bg) 1px, var(--sel-bg) 4px, transparent 4px); outline: none; }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing iframe { pointer-events: none; }
+
+/* folder buttons */
+#tree summary { display: flex; align-items: center; gap: 4px; }
+#tree summary .folder-name { flex: 1; overflow-wrap: anywhere; }
+.folder-btn { visibility: hidden; font-size: 11px; line-height: 1; padding: 1px 4px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+#tree summary:hover .folder-btn, #tree summary:focus-within .folder-btn { visibility: visible; }
+.folder-btn:hover { background: var(--hover); color: var(--fg); }
+
+/* outline: floating on the right, opens on hover, can be pinned open */
+#outline-wrap { position: fixed; top: 12px; right: 14px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; }
+#outline-toggle { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 6px; background: var(--control-bg); color: var(--fg); cursor: pointer; font-size: 16px; line-height: 1; opacity: .75; }
+#outline-toggle:hover, #outline-toggle[aria-pressed="true"] { opacity: 1; }
+#outline-toggle[aria-pressed="true"] { background: var(--sel-bg); color: var(--sel-fg); border-color: var(--sel-bg); }
+#outline { display: none; margin-top: 6px; width: 260px; max-height: calc(100vh - 70px); overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); box-shadow: 0 6px 24px #0006; font-size: 13px; }
+#outline-wrap:hover #outline, #outline-wrap.pinned #outline { display: block; }
+#outline a { display: block; padding: 2px 6px; border-radius: 4px; color: inherit; text-decoration: none; overflow-wrap: anywhere; }
+#outline a:hover { background: var(--hover); }
+#outline a.l2 { padding-left: 14px; } #outline a.l3 { padding-left: 24px; } #outline a.l4 { padding-left: 34px; } #outline a.l5 { padding-left: 44px; } #outline a.l6 { padding-left: 54px; }
+
+/* left panel: one line per name, scroll sideways */
+#sidebar.nowrap #tree, #sidebar.nowrap #search-results { width: max-content; min-width: 100%; }
+#sidebar.nowrap #tree a, #sidebar.nowrap #tree .folder-name, #sidebar.nowrap #search-results .result-path, #sidebar.nowrap #search-results .result-line { white-space: nowrap; overflow-wrap: normal; }
+#mode-row button#wrap-toggle[aria-pressed="false"] { background: transparent; }
+
+/* settings */
+#search-row { display: flex; gap: 6px; }
+#settings-open { flex: none; width: 30px; border: 1px solid var(--border); border-radius: 6px; background: var(--control-bg); color: var(--fg); cursor: pointer; font-size: 15px; }
+#settings-open:hover { background: var(--hover); }
+#settings { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: #0008; }
+#settings-card { width: min(420px, 92vw); padding: 16px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); box-shadow: 0 10px 40px #0009; }
+#settings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#settings-head h2 { margin: 0; font-size: 17px; }
+#settings-close { border: 0; background: transparent; color: var(--fg); font-size: 22px; cursor: pointer; line-height: 1; }
+#settings-card label { display: block; padding: 6px 0; cursor: pointer; }
+#settings-card .settings-note { color: var(--muted); font-size: 12.5px; margin: 8px 0 12px; }
+#settings-reset { font: inherit; padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer; }
+#settings-reset:hover { background: var(--hover); }
+body.fullwidth #preview { max-width: none; }
