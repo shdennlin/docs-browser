@@ -1,6 +1,6 @@
 [package]
 name = "docs-browser"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.91"
 description = "Zero-config local browser for project documentation (Markdown, Mermaid, HTML)"

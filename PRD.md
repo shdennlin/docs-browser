@@ -40,6 +40,7 @@
 | v1.4.30 (2026-11-25) | Expand/collapse icons are SVG line icons (two chevrons apart; framed box with a minus) in the text colour, the same in the toolbar and on folders (7.3; AC-72) |
 | v1.4.31 (2026-11-25) | In-page tabs (command/control click, middle click), keyboard shortcuts with a help dialog (7.5; AC-81, AC-82); layout: theme and settings buttons in a bottom bar, the Names/Contents switch inside the search box (7.3; AC-83) |
 | v1.4.32 (2026-11-25) | The active tab is marked by an underline (reference look) and idle tabs hide their `×`; a `?` shortcuts button at the bottom left of the list (7.3, 7.5; AC-83) |
+| v1.4.33 (2026-11-25) | Release 0.1.4: includes everything of v1.4.18 to v1.4.32 (Mermaid contrast, fuzzy file name search, copy file name, dead contents links, tabs and keyboard shortcuts, light/dark toggle, bottom bar, settings dialog and the other list and outline refinements); the Linux container suite passes all 101 rows; `Cargo.toml` and the README install tag updated |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
