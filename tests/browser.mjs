@@ -772,11 +772,14 @@ checks['AC-75'] = async (cdp) => {
     await q("document.getElementById('sidebar').style.fontSize = '26px'; true"); // make the rows wider than the list
     // a real mouse click, as a user does, on the visible part of the row
     await q("document.querySelector('#tree details[data-dir=\"docs\"]').open = true; true");
-    const pt = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');a.scrollIntoView({block:'center'});document.getElementById('sidebar').scrollLeft=0;var r=a.getBoundingClientRect();var s=document.getElementById('sidebar').getBoundingClientRect();return {x:Math.min(r.left+60,s.right-30),y:r.top+r.height/2}})()");
+    const pt = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');a.scrollIntoView({block:'center'});document.getElementById('side-scroll').scrollLeft=0;var r=a.getBoundingClientRect();var s=document.getElementById('sidebar').getBoundingClientRect();return {x:Math.min(r.left+60,s.right-30),y:r.top+r.height/2}})()");
     await p.mouse('mousePressed', pt.x, pt.y); await p.mouse('mouseReleased', pt.x, pt.y);
     await sleep(400);
     const dbg = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]').getBoundingClientRect();var s=document.getElementById('sidebar');return {linkW:Math.round(a.width),linkL:Math.round(a.left),vw:s.clientWidth,sw:s.scrollWidth}})()");
-    const side = await q("({sl:document.getElementById('sidebar').scrollLeft, wide:document.getElementById('sidebar').scrollWidth > document.getElementById('sidebar').clientWidth, tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left - document.getElementById('sidebar').getBoundingClientRect().left)})");
+    const side = await q("({sl:document.getElementById('side-scroll').scrollLeft, wide:document.getElementById('side-scroll').scrollWidth > document.getElementById('side-scroll').clientWidth, tb:Math.round(document.getElementById('toolbar').getBoundingClientRect().left - document.getElementById('sidebar').getBoundingClientRect().left)})");
+    // scrolled far to the right, every control is still in view
+    await q("document.getElementById('side-scroll').scrollLeft = 10000; true");
+    const farRight = await q("(function(){var sb=document.getElementById('sidebar').getBoundingClientRect();var bs=Array.from(document.querySelectorAll('#search-row > *, #mode-row > button')).map(function(b){return b.getBoundingClientRect()});return {all:bs.every(function(r){return r.left>=sb.left-1&&r.right<=sb.right+1}),n:bs.length,moved:document.getElementById('side-scroll').scrollLeft>0}})()");
     await q("localStorage.clear(); true");
     // HTML fills the right panel
     await p.goto('/?file=docs/flow.html'); await p.ready();
@@ -787,9 +790,9 @@ checks['AC-75'] = async (cdp) => {
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
-      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8
+      && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8 && farRight.all && farRight.moved && farRight.n === 8
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, dbg, icons, full })];
+    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, farRight, dbg, icons, full })];
   } finally { await p.close(); }
 };
 

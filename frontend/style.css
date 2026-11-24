@@ -44,14 +44,15 @@
 html, body { height: 100%; margin: 0; }
 body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif; background: var(--bg); color: var(--fg); }
 #app { display: grid; grid-template-columns: var(--side) 6px 1fr; height: 100%; }
-#sidebar { overflow: auto; padding: 8px 4px 24px 8px; font-size: 14px; }
+#sidebar { display: flex; flex-direction: column; overflow: hidden; padding: 8px 4px 0 8px; font-size: 14px; }
+#side-scroll { flex: 1; min-height: 0; overflow: auto; padding-bottom: 24px; }
 #main { overflow: auto; padding: 16px 28px 48px; }
 
 /* toolbar */
-#toolbar { position: sticky; left: 0; top: -8px; z-index: 1; background: var(--bg); padding: 8px 0 6px; margin-top: -8px; }
+#toolbar { flex: none; background: var(--bg); padding: 0 0 6px; }
 #search { width: 100%; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--control-bg); color: var(--fg); font: inherit; }
 #search:focus { outline: 2px solid var(--link); outline-offset: -1px; }
-#mode-row { display: flex; gap: 4px; margin-top: 6px; align-items: center; flex-wrap: nowrap; }
+#mode-row { display: flex; gap: 4px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
 #mode-row .spacer { flex: 1; }
 #mode-row button { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--fg); cursor: pointer; }
 #mode-row button:hover:not(:disabled) { background: var(--hover); }
@@ -182,3 +183,4 @@ body.fullwidth #preview { max-width: none; }
 /* the five buttons stay on one line */
 #mode-row button { white-space: nowrap; }
 #mode-row #expand-all, #mode-row #collapse-all, #mode-row #wrap-toggle { padding: 2px 7px; font-size: 14px; line-height: 1.2; }
+#search { min-width: 0; flex: 1; }

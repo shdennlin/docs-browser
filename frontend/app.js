@@ -262,8 +262,8 @@
       link.classList.add('selected');
       if (state.mode === 'names') {
         // Vertical only: scrollIntoView would also scroll the list sideways when names do not wrap.
-        var sb = $('#sidebar');
-        var top = sb.getBoundingClientRect().top + $('#toolbar').offsetHeight;
+        var sb = $('#side-scroll');
+        var top = sb.getBoundingClientRect().top;
         var lr = link.getBoundingClientRect();
         if (lr.top < top) sb.scrollTop -= top - lr.top + 4;
         else if (lr.bottom > sb.getBoundingClientRect().bottom) sb.scrollTop += lr.bottom - sb.getBoundingClientRect().bottom + 4;
