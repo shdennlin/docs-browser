@@ -1,0 +1,6 @@
+# Vendored browser libraries. Fetched with bun (npm registry) on 2026-11-24.
+markdown-it             15.0.3   dist/browser/markdown-it.umd.min.js        -> markdown-it.umd.min.js
+markdown-it-task-lists  2.1.1    dist/markdown-it-task-lists.min.js         -> markdown-it-task-lists.min.js
+mermaid                 12.3.0   dist/mermaid.min.js                        -> mermaid.min.js
+highlight.js            11.12.0  built with: bun build (lib/common, iife)   -> highlight.min.js
+highlight.js            11.12.0  styles/github.min.css                      -> highlight-github.min.css
