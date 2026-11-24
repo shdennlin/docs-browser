@@ -34,4 +34,11 @@ for (const scheme of ['dark', 'light']) {
   writeFileSync(join(OUT, `screenshot-${scheme}.png`), Buffer.from(shot.data, 'base64'));
   console.log(scheme, 'svgs:', await ev("document.querySelectorAll('svg').length"));
 }
+// HTML preview (shown in a sandboxed iframe), light page inside the dark app chrome.
+await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
+await s('Page.navigate', { url: `${BASE}/?file=architecture/dashboard.html` });
+for (let i = 0; i < 100; i++) { await sleep(200); if (await ev("!!document.querySelector('iframe')")) break; }
+await sleep(1500);
+writeFileSync(join(OUT, 'screenshot-html.png'), Buffer.from((await s('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+console.log('html iframe:', await ev("!!document.querySelector('iframe')"));
 proc.kill(); process.exit(0);

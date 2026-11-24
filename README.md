@@ -6,6 +6,8 @@ a file changes. One static binary, no configuration file, no network access need
 
 ![docs-browser showing a Markdown page with Mermaid diagrams (dark theme)](docs/images/screenshot-dark.png)
 
+![docs-browser showing an HTML file in a sandboxed frame](docs/images/screenshot-html.png)
+
 <sub>Screenshots use the fictional demo docs in `examples/demo-docs`. Light theme: [docs/images/screenshot-light.png](docs/images/screenshot-light.png). Regenerate with `docs-browser examples/demo-docs --port 4790` and `node tests/screenshot.mjs`.</sub>
 
 ```bash

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Acme Notes status (demo)</title>
+<style>
+  body { font: 15px/1.5 -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 32px; background: #f4f1fb; color: #2b2540; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  p.sub { margin: 0 0 24px; color: #6b6585; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .card { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 8px rgba(80, 60, 140, .12); }
+  .card b { display: block; font-size: 30px; color: #6c3fd1; }
+  .card span { color: #6b6585; font-size: 13px; }
+  .panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(80, 60, 140, .12); }
+  .bar { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+  .bar i { display: block; height: 14px; border-radius: 7px; background: linear-gradient(90deg, #8b5cf6, #ec4899); }
+  .bar em { width: 90px; font-style: normal; color: #6b6585; }
+  .ok { color: #168a4b; font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>Acme Notes status</h1>
+  <p class="sub">Fictional demo page &middot; plain HTML and CSS, rendered in a sandboxed frame</p>
+  <div class="grid">
+    <div class="card"><b>1,284</b><span>Notes stored</span></div>
+    <div class="card"><b>42 ms</b><span>Median search time</span></div>
+    <div class="card"><b class="ok">Healthy</b><span>Sync worker</span></div>
+  </div>
+  <div class="panel">
+    <h3 style="margin-top:0">Notes created per weekday</h3>
+    <div class="bar"><em>Monday</em><i style="width:62%"></i></div>
+    <div class="bar"><em>Tuesday</em><i style="width:78%"></i></div>
+    <div class="bar"><em>Wednesday</em><i style="width:91%"></i></div>
+    <div class="bar"><em>Thursday</em><i style="width:70%"></i></div>
+    <div class="bar"><em>Friday</em><i style="width:48%"></i></div>
+  </div>
+</body>
+</html>
