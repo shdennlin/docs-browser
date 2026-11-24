@@ -4,6 +4,10 @@ A zero-config local browser for the documentation in a folder: a file tree on th
 right. It renders Markdown (GitHub flavour), Mermaid diagrams and HTML files, and updates the preview when
 a file changes. One static binary, no configuration file, no network access needed.
 
+![docs-browser showing a Markdown page with Mermaid diagrams (dark theme)](docs/images/screenshot-dark.png)
+
+<sub>Screenshots use the fictional demo docs in `examples/demo-docs`. Light theme: [docs/images/screenshot-light.png](docs/images/screenshot-light.png). Regenerate with `docs-browser examples/demo-docs --port 4790` and `node tests/screenshot.mjs`.</sub>
+
 ```bash
 docs-browser .            # serve the current folder at http://127.0.0.1:4747
 docs-browser ./docs --port 8080 --open
