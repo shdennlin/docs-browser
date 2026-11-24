@@ -23,11 +23,10 @@ From a checkout of this repository:
 cargo install --locked --path .
 ```
 
-From a git URL, pinned to a release tag (replace the URL with where you host the repository; this
-repository has no remote yet):
+From GitHub, pinned to a release tag:
 
 ```bash
-cargo install --locked --git <URL> --tag v0.2.0
+cargo install --locked --git https://github.com/shdennlin/docs-browser --tag v0.2.0
 ```
 
 `--locked` makes cargo use the committed `Cargo.lock`, which is what pins exact dependency versions.
