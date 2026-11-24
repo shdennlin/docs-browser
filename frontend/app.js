@@ -1091,6 +1091,7 @@
   $('#shortcuts-close').addEventListener('click', closeShortcuts);
   shortcutsEl.addEventListener('click', function (e) { if (e.target === shortcutsEl) closeShortcuts(); });
   $('#settings-shortcuts').addEventListener('click', function () { closeSettings(); openShortcuts(); });
+  $('#shortcuts-open').addEventListener('click', openShortcuts);
 
   function focusSearch() { searchInput.focus(); searchInput.select(); }
 

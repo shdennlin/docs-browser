@@ -1118,6 +1118,17 @@ checks['AC-82'] = async (cdp) => {
 checks['AC-83'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=README.md');
   try {
+    await p.ev("(function(){var a=document.querySelector('#tree a[data-path=\"docs/code.md\"]');a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,metaKey:true}));return true})()");
+    await sleep(400);
+    const tab = await p.ev("(function(){var act=document.querySelector('#tabs .tab.active'),idle=document.querySelector('#tabs .tab:not(.active)');var A=getComputedStyle(act),I=getComputedStyle(idle);return {actShadow:A.boxShadow,actBg:A.backgroundColor,actClose:getComputedStyle(act.querySelector('.tab-close')).visibility,idleShadow:I.boxShadow,idleBg:I.backgroundColor,idleClose:getComputedStyle(idle.querySelector('.tab-close')).visibility,idleColor:I.color,actColor:A.color}})()");
+    const help = await p.ev("(function(){var b=document.getElementById('shortcuts-open'),f=document.getElementById('sidebar-footer'),th=document.getElementById('theme-toggle').getBoundingClientRect(),r=b.getBoundingClientRect(),sb=document.getElementById('sidebar').getBoundingClientRect();return {inFooter:f.contains(b),leftmost:r.right<=th.left,atLeft:Math.round(r.left-sb.left)<=12,atBottom:sb.bottom-r.bottom<=12,text:b.textContent}})()");
+    await p.ev("document.getElementById('shortcuts-open').click(); true"); await sleep(100);
+    const helpOpen = await p.ev("({open:!document.getElementById('shortcuts').hidden,rows:document.querySelectorAll('#shortcuts-table tr').length})");
+    await p.key('Escape', 'Escape', 27); await sleep(100);
+    const helpClosed = await p.ev("document.getElementById('shortcuts').hidden");
+    const helpOk = help.inFooter && help.leftmost && help.atLeft && help.atBottom && help.text === '?' && helpOpen.open && helpOpen.rows >= 9 && helpClosed === true;
+    const tabOk = /-2px/.test(tab.actShadow) && /inset/.test(tab.actShadow) && !/^rgb[^)]*\) 0px 2px/.test(tab.actShadow)
+      && tab.idleShadow === 'none' && tab.actBg !== tab.idleBg && tab.actClose === 'visible' && tab.idleClose === 'hidden' && tab.idleColor !== tab.actColor;
     const r = await p.ev(`(function(){
       function R(sel){var b=document.querySelector(sel).getBoundingClientRect();return {l:Math.round(b.left),r:Math.round(b.right),t:Math.round(b.top),b:Math.round(b.bottom)}}
       var side=R('#sidebar'),foot=R('#sidebar-footer'),theme=R('#theme-toggle'),set=R('#settings-open'),input=R('#search'),sw=R('#mode-switch'),
@@ -1129,11 +1140,11 @@ checks['AC-83'] = async (cdp) => {
         pad:parseFloat(getComputedStyle(document.getElementById('search')).paddingRight),swW:sw.r-sw.l,
         listButtons:document.querySelectorAll('#mode-row button').length,
         namesInRow:!!document.querySelector('#mode-row #mode-names,#mode-row #mode-contents')}})()`);
-    const ok = r.inFooter && r.notInToolbar && r.foot.b >= r.side.b - 12 && r.theme.t > r.tree.b - 2 && r.set.t > r.tree.b - 2
+    const ok = helpOk && tabOk && r.inFooter && r.notInToolbar && r.foot.b >= r.side.b - 12 && r.theme.t > r.tree.b - 2 && r.set.t > r.tree.b - 2
       && r.switchInBox && r.sw.l >= r.input.l && r.sw.r <= r.input.r && r.input.r - r.sw.r <= 8 && r.sw.t >= r.input.t && r.sw.b <= r.input.b
       && r.cont.r <= r.input.r && r.names.r <= r.cont.l + 1 && r.pad >= r.swW
       && r.listButtons === 3 && r.namesInRow === false;
-    return [ok, JSON.stringify(r)];
+    return [ok, JSON.stringify(Object.assign({ tab, help, helpOpen, helpClosed }, r))];
   } finally { await p.close(); }
 };
 

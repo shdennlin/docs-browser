@@ -215,13 +215,16 @@ body.fullwidth #preview { max-width: none; }
 #mode-row #expand-all, #mode-row #collapse-all { display: inline-flex; align-items: center; justify-content: center; }
 
 /* tabs */
-#tabs { flex: none; display: flex; align-items: stretch; gap: 2px; padding: 4px 96px 0 6px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg); scrollbar-width: thin; }
+#tabs { flex: none; display: flex; align-items: stretch; gap: 2px; padding-bottom: 0; padding: 4px 96px 0 6px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg); scrollbar-width: thin; }
 .tab { display: flex; align-items: center; gap: 6px; max-width: 220px; padding: 4px 6px 4px 10px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; color: var(--muted); cursor: pointer; font-size: 13px; white-space: nowrap; user-select: none; }
 .tab:hover { background: var(--hover); color: var(--fg); }
-.tab.active { background: var(--control-bg); color: var(--fg); border-color: var(--border); box-shadow: inset 0 2px 0 var(--sel-bg); }
+.tab.active { background: var(--control-bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--sel-bg); }
 .tab .tab-name { overflow: hidden; text-overflow: ellipsis; }
 .tab .tab-close { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; opacity: .6; }
 .tab .tab-close:hover { background: var(--hover); opacity: 1; }
+.tab:not(.active) .tab-close { visibility: hidden; }
+.tab:not(.active):hover .tab-close, .tab:focus-within .tab-close { visibility: visible; }
+.tab.active .tab-close { opacity: .9; }
 
 /* keyboard shortcuts dialog (same look as the settings dialog) */
 #shortcuts { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; background: #0008; }
@@ -235,3 +238,6 @@ body.fullwidth #preview { max-width: none; }
 #shortcuts kbd { display: inline-block; min-width: 1.5em; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--control-bg); color: var(--fg); font: 12px ui-monospace, Menlo, monospace; text-align: center; }
 #settings-shortcuts { font: inherit; padding: 4px 12px; margin-right: 6px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); cursor: pointer; }
 #settings-shortcuts:hover { background: var(--hover); }
+
+#shortcuts-open { flex: none; width: 30px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: var(--control-bg); color: var(--fg); cursor: pointer; font: 600 14px/1 inherit; }
+#shortcuts-open:hover { background: var(--hover); }
