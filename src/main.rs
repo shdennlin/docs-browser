@@ -117,7 +117,13 @@ async fn run() -> Result<(), Failure> {
     let include_hidden = state.resolver.include_hidden();
     let live = watch::init_live(&state, &root, |r, tx| watch::start_watcher(r, include_hidden, tx));
     let _watcher_guard = live.map(|(handle, rx)| {
-        tokio::spawn(watch::run(Arc::new(watch::Pipeline::new(state.clone())), rx));
+        let pipeline = Arc::new(watch::Pipeline::new(state.clone()));
+        tokio::spawn(watch::run(pipeline.clone(), rx));
+        // The first scan ran before the OS watch existed. Anything that changed in between would never
+        // be reported, so scan once more now that changes are being watched.
+        tokio::task::spawn_blocking(move || {
+            pipeline.process(watch::Batch { paths: Default::default(), rescan: true })
+        });
         handle
     });
 

@@ -126,7 +126,7 @@
   function renderTree() {
     clear(els.tree);
     els.tree.appendChild(buildList(state.tree, ''));
-    markSelected();
+    markSelected(false); // a re-render must not re-open a folder the user closed
   }
 
   function buildList(entries, prefix) {
@@ -158,15 +158,18 @@
     return ul;
   }
 
-  function markSelected() {
+  // `expandAncestors` is true on navigation only (PRD 5): the folders of the opened file open then.
+  function markSelected(expandAncestors) {
     var prev = els.tree.querySelector('a.selected');
     if (prev) prev.classList.remove('selected');
     if (!state.current) return;
-    L.ancestors(state.current).forEach(function (dir) {
-      state.expanded.add(dir);
-      var d = els.tree.querySelector('details[data-dir="' + CSS.escape(dir) + '"]');
-      if (d) d.open = true;
-    });
+    if (expandAncestors) {
+      L.ancestors(state.current).forEach(function (dir) {
+        state.expanded.add(dir);
+        var d = els.tree.querySelector('details[data-dir="' + CSS.escape(dir) + '"]');
+        if (d) d.open = true;
+      });
+    }
     var link = Array.prototype.find.call(els.tree.querySelectorAll('a[data-path]'), function (a) {
       return a.dataset.path === state.current;
     });
@@ -291,7 +294,7 @@
       $('#main').scrollTop = 0;
     }
     state.current = path;
-    markSelected();
+    markSelected(true);
     if (!path) {
       document.title = 'docs-browser';
       showState('Select a file from the list');

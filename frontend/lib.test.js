@@ -67,6 +67,8 @@ test('URL state round-trips, including CJK, spaces and plus signs', () => {
     assert.equal(got.file, file);
     assert.equal(got.hash, 'sec tion');
   }
+  assert.equal(L.parseLocation('?file=a+b.md', '').file, 'a+b.md'); // a literal plus stays a plus
+  assert.equal(L.parseLocation('?file=a%20b.md', '').file, 'a b.md');
   assert.equal(L.buildUrl(null, ''), '/');
   assert.equal(L.parseLocation('', '').file, null);
   assert.deepEqual(L.ancestors('docs/sub/x.md'), ['docs', 'docs/sub']);

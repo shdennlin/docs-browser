@@ -258,10 +258,8 @@ async fn guard(State(state): State<Arc<AppState>>, req: Request, next: Next) -> 
         let raw_origin = origin_header.to_str().ok().map(str::to_owned);
         let origin = raw_origin.as_ref().map(|s| s.to_ascii_lowercase());
         let same_origin = match (&origin, &host) {
-            (Some(o), Some(h)) => o
-                .strip_prefix("http://")
-                .or_else(|| o.strip_prefix("https://"))
-                .map_or(false, |authority| authority == h),
+            // This server speaks plain http only, so only an http:// origin can be its own.
+            (Some(o), Some(h)) => o.strip_prefix("http://").map_or(false, |authority| authority == h),
             _ => false,
         };
         // D11: a sandboxed HTML preview has an opaque origin, and some browsers (measured: Chromium 156)

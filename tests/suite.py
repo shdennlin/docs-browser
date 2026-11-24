@@ -382,6 +382,7 @@ def ac_26a(ctx):
         ({"host": "127.0.0.2:4100"}, 403),
         ({"headers": {"Origin": "http://evil.example"}}, 403),
         ({"headers": {"Origin": "null"}}, 403),  # D11: never accepted for the API
+        ({"headers": {"Origin": f"https://127.0.0.1:{PORT}"}}, 403),  # plain http only
         ({}, 200),
     ]
     got = []

@@ -20,6 +20,7 @@
 | v1.4.10 (2026-11-24) | AC-26c and AC-27 use ports of their own: a shared port made AC-26c fail in a full run only (13) |
 | v1.4.11 (2026-11-24) | D11, approved by the user: `Origin: null` is accepted for GET and HEAD on `/files/*` only, because Chromium 156 sends it for the assets of a sandboxed HTML preview and the strict rule broke them; found only when the suite ran with Chromium inside the Linux container (12.1, 15, AC-26a, AC-26b) |
 | v1.4.12 (2026-11-24) | AC-45 also runs two interleavings deterministically, with the test delivering `changed`, `removed` and `tree` events itself through a fake EventSource: a pending re-render must not overwrite "no longer exists", and a 404 must mark the file missing so a later `tree` event restores it (8.4, 8.5) |
+| v1.4.13 (2026-11-24) | Final whole-project review: the release profile of 10.1 is now in `Cargo.toml`; unused `anyhow` and `tokio-stream` removed; a literal `+` in `?file=` stays a plus (5); folders the user closed are not re-opened by a tree update, ancestors open on navigation only (5); a rescan runs once the watcher is registered, so changes during the first scan are not lost (8.1); only an `http://` origin counts as same-origin (12.1); watcher and rebuild error text is escaped (9.3); release 0.1.2 carries D11 |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -391,17 +392,16 @@ Versions are chosen in task T-0.1, written to `Cargo.toml` as minor-pinned requi
 | Concern | Crate | Notes |
 |---|---|---|
 | HTTP server, routing | `axum` + `tokio` | **Wildcard route syntax differs between axum 0.7 (`/*path`) and 0.8 (`/{*path}`).** T-0.1 compiles a wildcard route against the chosen version first. axum's `Path` and `Query` extractors already percent-decode; see §12.2 |
-| SSE streams | `tokio-stream` | `tower-http` was dropped in M2: headers are set by one small axum middleware |
+| SSE streams | `futures-util` (`stream::unfold`) | `tokio-stream` and `tower-http` were dropped: the stream is a small `unfold`, and headers are set by one small axum middleware |
 | File watching | `notify` (raw events) with a quiet-period debounce in `watch.rs` | `notify-debouncer-mini` was dropped in M4: it forwards the inotify access events that the tree scan itself causes on Linux (see §8.2). §8.2 classifies against the snapshot, because event kinds are not reliable |
 | CLI parsing | `clap` (derive) | |
 | Embedded frontend | `rust-embed` | |
 | Directory scan | `std::fs::read_dir` (`walkdir` dropped in M1: the scanner lists one directory at a time and decides about symlinks itself) | Symlinks are handled manually (§10.3) |
 | MIME types | a fixed table in `server.rs` (`mime_guess` dropped in M2: the whitelist is small and fixed) | `.js` must map to `text/javascript`, `.svg` to `image/svg+xml` |
-| Errors | `anyhow` | |
 | Open browser | `open` | |
 | Serialization | `serde`, `serde_json` | |
 
-Edition 2021 and the release profile (`opt-level = 3`, `lto = "thin"`, `strip = true`) follow the sibling project `claude-code-stats`.
+Edition 2021 and the release profile (`opt-level = 3`, `lto = "thin"`, `strip = true`, present in `Cargo.toml`) follow the sibling project `claude-code-stats`. `anyhow` was dropped: startup errors use a small `Failure` type that carries the exit code.
 
 ### 10.2 State ownership and concurrency
 

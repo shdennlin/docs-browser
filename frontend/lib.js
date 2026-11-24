@@ -140,7 +140,9 @@
 
   // ---------------------------------------------------------------- URL state (PRD 5)
   function parseLocation(search, hash) {
-    var file = new URLSearchParams(search || '').get('file');
+    // Read the raw value: URLSearchParams would turn a literal + into a space, but buildUrl writes %20 and %2B.
+    var m = /[?&]file=([^&]*)/.exec(search || '');
+    var file = m ? safeDecode(m[1]) : null;
     var h = String(hash || '').replace(/^#/, '');
     var decoded = safeDecode(h);
     return { file: file || null, hash: decoded === null ? '' : decoded };
