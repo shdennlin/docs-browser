@@ -174,7 +174,7 @@ body.fullwidth #preview { max-width: none; }
 /* outline colours follow the headings (dark mode); the section being read is highlighted */
 #outline a.l1 { color: var(--h1, inherit); } #outline a.l2 { color: var(--h2, inherit); } #outline a.l3 { color: var(--h3, inherit); }
 #outline a.l4 { color: var(--h4, inherit); } #outline a.l5 { color: var(--h5, inherit); } #outline a.l6 { color: var(--h6, inherit); }
-#outline a.current { background: var(--hover); font-weight: 600; box-shadow: inset 3px 0 0 currentColor; }
+#outline a.current { background: var(--hover); font-weight: 600; }
 
 /* folder icons (the browser's own marker disappears with display: flex) */
 #tree summary::before { content: ''; flex: none; width: 14px; height: 14px; background: var(--link); opacity: .85;

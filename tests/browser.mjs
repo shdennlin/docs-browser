@@ -738,6 +738,7 @@ checks['AC-75'] = async (cdp) => {
     const outline = await q("(function(){var w=document.getElementById('outline-wrap');var a=Array.from(document.querySelectorAll('#outline a')).map(function(x){return x.textContent+'|'+x.className});return {shown:!w.hidden,a:a,panel:getComputedStyle(document.getElementById('outline')).display}})()");
     await q("document.getElementById('outline-toggle').click(); true");
     const pinned = await q("getComputedStyle(document.getElementById('outline')).display");
+    const curStyle = await q("(function(){var a=document.querySelector('#outline a.current');var s=getComputedStyle(a);return {shadow:s.boxShadow,border:s.borderLeftWidth,weight:s.fontWeight,bg:s.backgroundColor}})()");
     await q("document.querySelector('#outline a.l2').click(); true");
     const hashAfter = await q('location.hash');
     await q("document.getElementById('outline-toggle').click(); true");
@@ -796,13 +797,13 @@ checks['AC-75'] = async (cdp) => {
     await waitFor(() => p.ev("!!document.querySelector('iframe.html-frame')"), 5000, 50);
     const full = await q("(function(){var m=document.getElementById('main').getBoundingClientRect(),f=document.querySelector('iframe.html-frame').getBoundingClientRect();return {dw:Math.round(m.width-f.width),dl:Math.round(f.left-m.left),dt:Math.round(f.top-m.top),outlineHidden:document.getElementById('outline-wrap').hidden}})()");
     const ok = oneLine && outline.shown && outline.a.length >= 2 && outline.a.some((x) => x.endsWith('|l2')) && outline.panel === 'none'
-      && pinned === 'block' && hashAfter.length > 1 && docsOpen === true && docsClosed === 0
+      && pinned === 'block' && curStyle.shadow === 'none' && curStyle.border === '0px' && Number(curStyle.weight) >= 600 && curStyle.bg !== 'rgba(0, 0, 0, 0)' && hashAfter.length > 1 && docsOpen === true && docsClosed === 0
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
       && side.wide && dbg.linkW > dbg.vw && side.sl === 0 && side.tb === 8 && outerBefore > 0 && outerLeft === 0 && farRight.all && farRight.moved && farRight.n === 8
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, outerLeft, farRight, dbg, icons, full })];
+    return [ok, JSON.stringify({ outline, pinned, curStyle, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, side, outerLeft, farRight, dbg, icons, full })];
   } finally { await p.close(); }
 };
 

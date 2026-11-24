@@ -33,6 +33,7 @@
 | v1.4.23 (2026-11-25) | File name search is fuzzy, ranked and shows full paths (7.3; AC-73); the outer panel snaps back if a browser scrolls it (AC-75) |
 | v1.4.24 (2026-11-25) | Fix: contents links to headings with an emoji selector (`🛡️`, `🕵️`) did not jump; the anchor lookup now ignores U+FE0E/U+FE0F/U+200D and leading hyphens (7.4; AC-77) |
 | v1.4.25 (2026-11-25) | Copy file name button (7.4; AC-78) |
+| v1.4.26 (2026-11-25) | The current outline entry loses its coloured left border; background and bold remain (7.4; AC-75) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -305,7 +306,7 @@ The top of the file list has a search box, a `Names` / `Contents` switch and two
 
 ### 7.4 Outline and settings
 
-- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
+- **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted with a background and bold text, without a coloured side border); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
 - **Copy file name:** while a file is open, a `❐` button at the top right, left of the outline button, copies the file name (the last part of the path, for example `rel.md`) to the clipboard and shows `✓` for about a second. It is also there for HTML pages and absent when no file is open.
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button next to the search box opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
