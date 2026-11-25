@@ -13,6 +13,7 @@ a file changes. One static binary, no configuration file, no network access need
 ```bash
 docs-browser .            # serve the current folder at http://127.0.0.1:4747 and open it
 docs-browser ./docs --port 8080    # the browser opens automatically; add --no-open to keep it closed
+docs-browser docs/notes.md  # serves the git repository that holds the file (or its folder) and opens that file
 ```
 
 ## Install
@@ -48,7 +49,7 @@ docs-browser [OPTIONS] [DIRECTORY]
 
 - Exit codes: `0` normal stop, `1` runtime error such as a port already in use, `2` bad usage or a
   directory that is missing, not a directory, or cannot be read.
-- The URL is printed at startup (`Serving <folder> at http://127.0.0.1:4747`). If 4747 is busy and `--port` was not given, the next free port is used and a `note:` line says so.
+- The URL is printed at startup (`Serving <folder> at http://127.0.0.1:4747`). A file argument also prints `Opening <url>`, the page for that file. If 4747 is busy and `--port` was not given, the next free port is used and a `note:` line says so.
 - Only Markdown (`.md`, `.markdown`) and HTML (`.htm`, `.html`) files are listed. A page can also load the
   CSS, JavaScript, images and fonts next to it. Nothing else is served.
 - `/?file=docs/architecture.md#section` opens a file directly; the address bar always shows the current file.

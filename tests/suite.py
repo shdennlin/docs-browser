@@ -18,6 +18,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import urllib.parse
 import sys
 import tempfile
 import time
@@ -885,7 +886,6 @@ def ac_37(ctx):
 @ac("AC-60")
 def ac_60(ctx):
     a = run_cli(ctx, ["/no/such/dir"])
-    b = run_cli(ctx, [os.path.join(FIXTURE_SITE, "README.md")])
     locked = tempfile.mkdtemp(prefix="docs-browser-locked-")
     os.chmod(locked, 0)
     try:
@@ -897,10 +897,59 @@ def ac_60(ctx):
         os.chmod(locked, 0o755)
         os.rmdir(locked)
     ok = (a[0] == 2 and "error: directory not found: /no/such/dir" in a[2]
-          and b[0] == 2 and "error: not a directory:" in b[2]
           and (c is None or (c[0] == 2 and "error: cannot read directory:" in c[2])))
     unreadable = "skipped (root)" if c is None else f"exit={c[0]} {c[2].strip()[:60]!r}"
-    return ok, f"missing dir: exit={a[0]}; file: exit={b[0]} {b[2].strip()[:50]!r}; unreadable dir: {unreadable}"
+    return ok, f"missing dir: exit={a[0]}; unreadable dir: {unreadable} (a file argument is AC-89)"
+
+
+@ac("AC-89")
+def ac_89(ctx):
+    """A file argument serves its git repository (the nearest `.git`), or its folder, and opens that file."""
+    base = tempfile.mkdtemp(prefix="docs-browser-ac89-")
+    try:
+        repo = os.path.join(base, "repo")
+        os.makedirs(os.path.join(repo, ".git"))
+        os.makedirs(os.path.join(repo, "sub dir"))
+        note = os.path.join(repo, "sub dir", "中文 note.md")
+        with open(note, "w", encoding="utf-8") as f:
+            f.write("# hi\n")
+        with open(os.path.join(repo, ".secret.md"), "w") as f:
+            f.write("# hidden\n")
+        plain = os.path.join(base, "plain")
+        os.makedirs(plain)
+        with open(os.path.join(plain, "p.md"), "w") as f:
+            f.write("# p\n")
+        with open(os.path.join(plain, "p.png"), "wb") as f:
+            f.write(b"x")
+        rel = "sub dir/中文 note.md"
+        pr = Proc(ctx, [note, "--port", "0"])
+        try:
+            pr.wait_for_stderr("Opening")
+            err = pr.stderr()
+            m = re.search(r"http://127\.0\.0\.1:(\d+)", err)
+            port = int(m.group(1)) if m else 0
+            file_status = get(port, "/api/file?path=" + urllib.parse.quote(rel, safe="/"))[0] if port else None
+            tree_has_dir = b'"name":"sub dir"' in get(port, "/api/tree")[2] if port else False
+        finally:
+            pr.stop()
+        root_ok = os.path.realpath(repo) in err
+        url_ok = "?file=sub%20dir/%E4%B8%AD%E6%96%87%20note.md" in err
+        pl = Proc(ctx, [os.path.join(plain, "p.md"), "--port", "0"])
+        try:
+            pl.wait_for_stderr("Opening")
+            perr = pl.stderr()
+        finally:
+            pl.stop()
+        plain_ok = os.path.realpath(plain) in perr and "?file=p.md" in perr
+        png = run_cli(ctx, [os.path.join(plain, "p.png")])
+        hidden = run_cli(ctx, [os.path.join(repo, ".secret.md")])
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    ok = (root_ok and url_ok and file_status == 200 and tree_has_dir and plain_ok
+          and png[0] == 2 and "not a Markdown or HTML file" in png[2]
+          and hidden[0] == 2 and "cannot open file" in hidden[2])
+    return ok, (f"repo root={root_ok} url={url_ok} file={file_status} tree={tree_has_dir}; plain={plain_ok}; "
+                f"png exit={png[0]}; hidden exit={hidden[0]}")
 
 
 @ac("AC-61")

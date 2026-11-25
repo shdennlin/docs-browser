@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
-use docs_browser::resolve::Resolver;
+use docs_browser::entry;
+use docs_browser::resolve::{Endpoint, Resolver};
 use docs_browser::server::{escape_log, router, AppState};
 use docs_browser::watch;
 
@@ -17,7 +18,7 @@ const PORT_TRIES: u16 = 20;
 #[derive(Parser)]
 #[command(name = "docs-browser", version, about = "Zero-config local browser for project documentation")]
 struct Cli {
-    /// Directory to serve
+    /// Directory to serve, or a Markdown/HTML file: its git repository (or folder) is served and the file opens
     #[arg(default_value = ".")]
     directory: PathBuf,
     /// TCP port, 0 asks the OS for a free one [default: 4747]
@@ -74,27 +75,45 @@ async fn run() -> Result<(), Failure> {
     // clap reports usage errors (a bad --port or --host) itself and exits with code 2.
     let cli = Cli::parse();
 
-    match std::fs::metadata(&cli.directory) {
+    // A file argument serves its root (the nearest git repository, else its folder) and opens the file.
+    let (dir, file_entry) = if std::fs::metadata(&cli.directory).is_ok_and(|m| m.is_file()) {
+        let e = entry::resolve_entry(&cli.directory)
+            .map_err(|m| Failure { code: 2, message: format!("{m}: {}", shown(&cli.directory)) })?;
+        (e.root.clone(), Some(e))
+    } else {
+        (cli.directory.clone(), None)
+    };
+    match std::fs::metadata(&dir) {
         Ok(m) if m.is_dir() => {}
         Ok(_) => {
-            return Err(Failure { code: 2, message: format!("not a directory: {}", shown(&cli.directory)) })
+            return Err(Failure { code: 2, message: format!("not a directory: {}", shown(&dir)) })
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(Failure { code: 2, message: format!("directory not found: {}", shown(&cli.directory)) })
+            return Err(Failure { code: 2, message: format!("directory not found: {}", shown(&dir)) })
         }
         Err(e) => {
-            return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&cli.directory)) })
+            return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&dir)) })
         }
     }
     // A directory that exists but cannot be listed would start and serve an empty tree in silence.
-    if let Err(e) = std::fs::read_dir(&cli.directory) {
-        return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&cli.directory)) });
+    if let Err(e) = std::fs::read_dir(&dir) {
+        return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&dir)) });
     }
-    let resolver = Resolver::new(&cli.directory, cli.include_hidden).map_err(|e| Failure {
+    let resolver = Resolver::new(&dir, cli.include_hidden).map_err(|e| Failure {
         code: 2,
-        message: format!("cannot use directory: {}: {e}", shown(&cli.directory)),
+        message: format!("cannot use directory: {}: {e}", shown(&dir)),
     })?;
     let root = resolver.root().to_path_buf();
+    // The file must be servable under the same rules as `/api/file` (hidden files need --include-hidden).
+    let file_rel = match &file_entry {
+        Some(e) => {
+            if let Err(d) = resolver.resolve(&e.rel, Endpoint::ApiFile) {
+                return Err(Failure { code: 2, message: format!("cannot open file: {}: {}", shown(&cli.directory), d.reason()) });
+            }
+            Some(e.rel.clone())
+        }
+        None => None,
+    };
 
     let listener = match cli.port {
         Some(port) => {
@@ -121,9 +140,15 @@ async fn run() -> Result<(), Failure> {
     let state = AppState::new(resolver, local);
     state.verbose.store(cli.verbose, std::sync::atomic::Ordering::Relaxed);
     docs_browser::elog!("Serving {} at http://{}", shown(&root), local);
-
+    // With a file argument the page opens that file; the URL is printed so it can be used without the browser.
+    let url = match &file_rel {
+        Some(rel) => entry::file_url(&docs_browser::server::browse_url(local), rel),
+        None => docs_browser::server::browse_url(local),
+    };
+    if file_rel.is_some() {
+        docs_browser::elog!("Opening {url}");
+    }
     if !cli.no_open {
-        let url = docs_browser::server::browse_url(local);
         if let Err(e) = open::that_detached(&url) {
             docs_browser::elog!("warning: could not open a browser for {url}: {e}");
         }

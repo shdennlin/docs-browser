@@ -48,6 +48,7 @@
 | v1.4.38 (2026-11-25) | A status bar under the preview shows the created and modified times and, inside a git repository, the branch, the last commit of the file and whether it has uncommitted changes, from the new `GET /api/info` (7.3, 11; AC-87, UT-19, UT-20); the diagram's full-screen button is a text glyph instead of an `<svg>` (7.4; fixes AC-04); AC-71 follows the dark accents |
 | v1.4.39 (2026-11-25) | Release 0.3.0: includes v1.4.34 to v1.4.38 (dark Mermaid accents, full-screen Mermaid viewer, version in the footer, file information bar). Security: `GET /api/info` no longer runs `git status`, which executes a repository's configured clean filters; `dirty` is computed with filter-free commands (UT-21). `Cargo.toml` and the README install tag updated ; the Linux container suite passes all 108 rows |
 | v1.4.40 (2026-11-25) | `--open` is the default (`--no-open` turns it off); without `--port`, a busy 4747 moves to the next free port from 4748 to 4766 with a note, an explicit busy port is still an error (9, 9.1; AC-64, AC-88, UT-22); the tests pass `--no-open` |
+| v1.4.41 (2026-11-25) | `docs-browser <file.md>` serves the nearest enclosing git repository (or the file's folder), opens that file with `?file=`, and prints the root and the URL (9, 9.1; AC-60, AC-89, UT-23, UT-24) |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
@@ -414,7 +415,7 @@ docs-browser [directory]
 
 `directory` defaults to `.`.
 
-Options: `--port <N>` (default 4747, see 9.1), `--host <ADDR>` (default `127.0.0.1`), `--no-open`, `--include-hidden`, `--verbose` (alias `-v`), `--help`, `--version`. `--open` is still accepted (hidden) for earlier scripts.
+Options: `<path>` is a directory (default `.`) or a Markdown/HTML file (see 9.1), `--port <N>` (default 4747, see 9.1), `--host <ADDR>` (default `127.0.0.1`), `--no-open`, `--include-hidden`, `--verbose` (alias `-v`), `--help`, `--version`. `--open` is still accepted (hidden) for earlier scripts.
 
 ### 9.1 Startup and exit behaviour
 
@@ -424,6 +425,7 @@ Options: `--port <N>` (default 4747, see 9.1), `--host <ADDR>` (default `127.0.0
 - Without `--port`: 4747 is tried first; if it is in use, the next free port from 4748 to 4766 is used and the line `note: port 4747 is busy, using <port>` goes to stderr; if all of those are busy, the OS picks a free port. Any other bind error is reported at once (exit **1**).
 - Invalid `--host` or `--port`: clap usage error, exit **2**.
 - `--port 0` asks the OS for a free port; the printed URL shows the real port.
+- A file argument (`.md`, `.markdown`, `.html`, `.htm`): the served root is the nearest enclosing git repository, found by walking up from the file's folder to the first `.git` (a folder or a file, as in a worktree); without one, the file's own folder. No `git` command runs for this. The page opens that file with `?file=<path relative to the root>`, and the line `Opening <url>` is printed. Other file types exit `2` with `error: not a Markdown or HTML file: <path>`; a file that the viewer would refuse (for example a hidden file without `--include-hidden`) exits `2` with `error: cannot open file: <path>: <reason>`. The `Serving` line shows the real root.
 - Opening the printed URL in the default browser is the default. `--no-open` turns it off. With a wildcard host (`0.0.0.0`) it opens `http://127.0.0.1:<port>/`. If opening fails (for example on a headless host), print `warning: could not open a browser for <url>: <reason>` and continue.
 - No configuration file is read.
 - SIGINT or SIGTERM: close SSE streams (§8.3) and exit **0** within 2 s.
@@ -838,7 +840,7 @@ site/
 
 | ID | M | Requirement | Verification | Expected |
 |---|---|---|---|---|
-| AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser README.md; echo $?`; `docs-browser <dir with mode 000>; echo $?` (skipped when running as root) | stderr `error: directory not found: ...` / `not a directory` / `cannot read directory`; exit `2` for all |
+| AC-60 | M5 | §9.1 bad dir | `docs-browser /no/such/dir; echo $?`; `docs-browser <dir with mode 000>; echo $?` (skipped when running as root) | stderr `error: directory not found: ...` / `cannot read directory`; exit `2` for both (a file argument is AC-89) |
 | AC-61 | M5 | §9.1 port busy | Start two instances on port 4100 | Second prints `error: cannot bind 127.0.0.1:4100: ...`; exit `1` |
 | AC-62 | M5 | §9.1 `--port 0` | `docs-browser tests/fixtures/site --port 0` | Startup line shows a non-zero port that answers `200` |
 | AC-63 | M5 | §9.1 `--open` | macOS: run with `--open`; the runner does this only when `DOCS_BROWSER_SUITE_OPEN=1` is set, because it opens a real tab. Linux container (no desktop): run with `--open` | macOS: the OS accepts the request to open `http://127.0.0.1:<port>/` (no `warning:` on stderr) and the server answers `200`. Linux: stderr contains `warning: could not open a browser for http://127.0.0.1:<port>/` and the server still answers `200` |
@@ -849,6 +851,7 @@ site/
 | AC-68 | M5 | §9.1 wildcard open | macOS: `--host 0.0.0.0 --open` (same opt-in as AC-63). Linux container: same flags. The URL itself is also covered by the unit test `browse_url_never_uses_a_wildcard_address` | macOS: no `warning:` and the server answers `200`. Linux: the warning names `http://127.0.0.1:<port>/`, never `0.0.0.0` |
 | AC-69 | M5 | §9.1 bind errors | macOS: `docs-browser . --port 80` as an unprivileged user. Linux: the same inside a container started with `--user 1000 --sysctl net.ipv4.ip_unprivileged_port_start=1024` (without the sysctl, Docker allows the bind, measured) | `error: cannot bind ...`; exit `1` |
 | AC-88 | M5 | §9.1 default port fallback | Hold `127.0.0.1:4747` with a listener; run `docs-browser tests/fixtures/site` (no `--port`); then `docs-browser tests/fixtures/site --port 4747` | The startup line shows a port from 4748 to 4766 that answers `200`; stderr has `note: port 4747 is busy, using`; the explicit busy port exits `1` with `error: cannot bind 127.0.0.1:4747` |
+| AC-89 | M5 | §9.1 file argument | Make a folder `repo/.git`, `repo/sub dir/中文 note.md`, `repo/.secret.md` and a folder `plain/` with `p.md` and `p.png`. Run `docs-browser repo/sub dir/中文 note.md --port 0`; `docs-browser plain/p.md --port 0`; `docs-browser plain/p.png`; `docs-browser repo/.secret.md` | Repo case: the `Serving` line shows `repo`, the `Opening` line has `?file=sub%20dir/%E4%B8%AD%E6%96%87%20note.md`, `/api/file` for that path answers `200`, `/api/tree` lists `sub dir`. Plain case: the root is `plain` and the URL has `?file=p.md`. `p.png` exits `2` with `not a Markdown or HTML file`; the hidden file exits `2` with `cannot open file` |
 
 ### 13.5 Unit tests
 
@@ -876,6 +879,8 @@ site/
 | UT-20 | M3 | File information, repository | In a fresh repository on branch `trunk`: an untracked file shows the branch, no commit and `dirty`; after a commit it shows the commit subject, a time and not `dirty`; an edit makes it `dirty` again |
 | UT-21 | M3 | File information, untrusted repository | A repository whose config names a clean filter that creates a marker file: reading the file's information never creates the marker, still reports the file as changed after an edit and as unchanged after it is restored |
 | UT-22 | M5 | §9.1 default port fallback | Busy start port: the bind moves to the next free port in range; all tries busy: an OS-chosen port is used |
+| UT-23 | M5 | §9.1 file argument root | The root is the nearest `.git` above the file (a folder or a `.git` file); none: the file's folder; unsupported and missing files are refused |
+| UT-24 | M5 | §9.1 file URL | `?file=` value is percent-encoded per byte with `/` kept; the base URL is kept |
 
 Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
 
@@ -1035,7 +1040,8 @@ A spike task is done when `docs/spikes/<task>.md` exists and answers every quest
 | Task | Description | Depends | Done when |
 |---|---|---|---|
 | T-5.1 | Full CLI: flags, exit codes, host warning, `--open`, verbose, log escaping, non-loopback Origin rule | T-4.3 | AC-26c, AC-27, AC-37, AC-60 to AC-66, AC-68, AC-69 |
-| T-5.2 | Default port fallback and `--open` by default with `--no-open` (added on request) | T-5.1 | AC-64, AC-88, UT-22 |
+| T-5.6 | Default port fallback and `--open` by default with `--no-open` (added on request) | T-5.1 | AC-64, AC-88, UT-22 |
+| T-5.7 | A file argument serves its git repository (or folder) and opens the file (added on request) | T-5.6 | AC-60, AC-89, UT-23, UT-24 |
 | T-5.2 | README | T-5.1 | `make help` documented; install path stated |
 | T-5.3 | **MVP exit gate:** run the whole §13 suite on macOS **and** on Linux | T-5.1 | Every AC and UT passes on both. A criterion may be waived only by an explicit, dated note in this PRD, approved by its owner |
 | T-5.4 | Benchmark on the §3.1 workload | T-5.1 | AC-67 |
