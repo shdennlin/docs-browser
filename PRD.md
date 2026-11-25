@@ -49,6 +49,7 @@
 | v1.4.39 (2026-11-25) | Release 0.3.0: includes v1.4.34 to v1.4.38 (dark Mermaid accents, full-screen Mermaid viewer, version in the footer, file information bar). Security: `GET /api/info` no longer runs `git status`, which executes a repository's configured clean filters; `dirty` is computed with filter-free commands (UT-21). `Cargo.toml` and the README install tag updated ; the Linux container suite passes all 108 rows |
 | v1.4.40 (2026-11-25) | `--open` is the default (`--no-open` turns it off); without `--port`, a busy 4747 moves to the next free port from 4748 to 4766 with a note, an explicit busy port is still an error (9, 9.1; AC-64, AC-88, UT-22); the tests pass `--no-open` |
 | v1.4.41 (2026-11-25) | `docs-browser <file.md>` serves the nearest enclosing git repository (or the file's folder), opens that file with `?file=`, and prints the root and the URL (9, 9.1; AC-60, AC-89, UT-23, UT-24) |
+| v1.4.42 (2026-11-25) | Release 0.4.0: includes v1.4.40 (browser opens by default, `--no-open`; a busy default port moves to the next free one) and v1.4.41 (a file argument serves its git repository and opens the file) on top of 0.3.0; `Cargo.toml`, `Cargo.lock` and the README install tag updated |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
 
