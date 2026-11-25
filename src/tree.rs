@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::resolve::{
-    has_extension, rel_to_string, visible, Resolver, SERVED_EXTENSIONS, SUPPORTED_EXTENSIONS,
+    has_extension, rel_to_string, visible, Resolver, LISTED_EXTENSIONS, SERVED_EXTENSIONS,
 };
 
 /// Entry cap of PRD 7.2.
@@ -220,7 +220,7 @@ impl Scanner<'_> {
                         canonical_rel: canonical_rel.clone(),
                     },
                 );
-                if has_extension(Path::new(&name), SUPPORTED_EXTENSIONS) {
+                if has_extension(Path::new(&name), LISTED_EXTENSIONS) {
                     out.push(TreeEntry {
                         name,
                         kind: EntryKind::File,

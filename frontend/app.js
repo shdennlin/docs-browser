@@ -215,9 +215,9 @@
       a.dataset.path = r.path;
       a.title = r.path;
       var badge = document.createElement('span');
-      var isHtml = /\.html?$/i.test(r.path);
-      badge.className = 'badge ' + (isHtml ? 'html' : 'md');
-      badge.textContent = isHtml ? 'HTML' : 'MD';
+      var fuzzyBadge = L.badgeFor(r.path);
+      badge.className = 'badge ' + fuzzyBadge.cls;
+      badge.textContent = fuzzyBadge.text;
       a.appendChild(badge);
       var cut = r.path.lastIndexOf('/') + 1;
       var hit = {};
@@ -294,9 +294,9 @@
         a.dataset.path = e.path;
         a.title = e.path;
         var badge = document.createElement('span');
-        var isHtml = /\.html?$/i.test(e.name);
-        badge.className = 'badge ' + (isHtml ? 'html' : 'md');
-        badge.textContent = isHtml ? 'HTML' : 'MD';
+        var treeBadge = L.badgeFor(e.name);
+        badge.className = 'badge ' + treeBadge.cls;
+        badge.textContent = treeBadge.text;
         a.appendChild(badge);
         a.appendChild(document.createTextNode(e.name));
         li.appendChild(a);
@@ -564,6 +564,30 @@
     scrollToHash(hash);
   }
 
+  // Images and PDF files are shown straight from `/files/*` (PRD 7.4). A PDF gets the same sandbox header
+  // as every `/files/*` response, which Chromium still renders inside the frame (measured in a spike).
+  async function renderMedia(path, token) {
+    var url = '/files/' + L.encodePath(path);
+    var head = await fetch(url, { method: 'HEAD' });
+    if (token !== state.token) return;
+    if (!head.ok) { state.missing = true; return showState('File not found'); }
+    clear(els.preview);
+    if (L.isPdf(path)) {
+      els.preview.classList.add('wide');
+      var frame = document.createElement('iframe');
+      frame.className = 'html-frame pdf-frame';
+      frame.setAttribute('title', path);
+      frame.src = url;
+      els.preview.appendChild(frame);
+    } else {
+      var img = document.createElement('img');
+      img.className = 'media-image';
+      img.alt = path;
+      img.src = url + '?v=' + Date.now(); // a file changed on disk shows its new picture
+      els.preview.appendChild(img);
+    }
+  }
+
   async function renderHtml(path, token) {
     var head = await fetch('/files/' + L.encodePath(path), { method: 'HEAD' });
     if (token !== state.token) return;
@@ -665,7 +689,8 @@
     document.title = path + ' - docs-browser';
     loadInfo(path, token);
     try {
-      if (L.isHtml(path)) await renderHtml(path, token);
+      if (L.isImage(path) || L.isPdf(path)) await renderMedia(path, token);
+      else if (L.isHtml(path)) await renderHtml(path, token);
       else await renderMarkdown(path, hash, token); // other types: the server answers 404 or 415
     } catch (e) {
       if (token === state.token) showState('Could not load the file: ' + (e && e.message ? e.message : e));

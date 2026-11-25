@@ -3,6 +3,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const L = require('./lib.js');
 
+test('ut_28 media types and tree badges', () => {
+  assert.equal(L.isImage('docs/pic.PNG'), true);
+  assert.equal(L.isImage('a.svg'), false);
+  assert.equal(L.isPdf('report.pdf'), true);
+  assert.equal(L.isPdf('report.pdf.md'), false);
+  assert.deepEqual(L.badgeFor('a.md'), { cls: 'md', text: 'MD' });
+  assert.deepEqual(L.badgeFor('a.htm'), { cls: 'html', text: 'HTML' });
+  assert.deepEqual(L.badgeFor('pic.jpg'), { cls: 'img', text: 'IMG' });
+  assert.deepEqual(L.badgeFor('report.pdf'), { cls: 'pdf', text: 'PDF' });
+});
+
 test('ac_16 slugs follow the GitHub rules', () => {
   assert.equal(L.slugify('Data Flow'), 'data-flow');
   assert.equal(L.slugify('中文 標題'), '中文-標題');

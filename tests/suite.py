@@ -157,6 +157,14 @@ def flatten(entries, prefix=""):
     return out
 
 
+def node_unit_test(ctx):
+    """UT-28 is a frontend unit test in frontend/lib.test.js, run with node (not cargo)."""
+    n = ctx["id"].split("-")[1]
+    r = sh("node --test frontend/lib.test.js", cwd=ROOT)
+    ok = r.returncode == 0 and re.search(rf"ok \d+ - ut_{n} ", r.stdout) is not None
+    return ok, f"node --test frontend/lib.test.js: exit={r.returncode} ut_{n}={'ok' if ok else 'missing or failing'}"
+
+
 def cargo_unit_test(ctx):
     """UT-NN rows map to Rust tests whose names start with `ut_NN_` (e.g. `ut_01_traversal_inputs`)."""
     n = ctx["id"].split("-")[1]
@@ -498,7 +506,7 @@ def ac_36(ctx):
 CHROME_DEFAULT = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IDS = ["AC-03b", "AC-04", "AC-05", "AC-06", "AC-07b", "AC-09", "AC-10", "AC-12b",
                "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70", "AC-71", "AC-72", "AC-73", "AC-74", "AC-75", "AC-76", "AC-77", "AC-78", "AC-79", "AC-80", "AC-81", "AC-82", "AC-83", "AC-84", "AC-85", "AC-86", "AC-87",
-               "AC-90", "AC-92", "AC-93"]
+               "AC-90", "AC-92", "AC-93", "AC-95"]
 
 
 def run_browser(ctx, base, ids):
@@ -557,7 +565,7 @@ def ac_16(ctx):
     if shutil.which("node") is None:
         raise Skip("node not found")
     r = sh("node --test frontend/*.test.js", cwd=ROOT)
-    ok = r.returncode == 0 and "ok 1 - ac_16 slugs follow the GitHub rules" in r.stdout
+    ok = r.returncode == 0 and re.search(r"ok \d+ - ac_16 slugs follow the GitHub rules", r.stdout) is not None
     tests = re.search(r"# pass (\d+)", r.stdout)
     return ok, f"node --test: exit={r.returncode} pass={tests.group(1) if tests else '?'}"
 
@@ -1019,6 +1027,25 @@ def ac_94(ctx):
     return ok, f"loopback absolutePath={lo_abs}; 0.0.0.0 absolutePath={any_abs}; rootKey={key_lo} same={key_lo == key_any}"
 
 
+@ac("AC-96")
+def ac_96(ctx):
+    """Images and PDF are listed in the tree and served under the /files/* rules; SVG is served but not listed;
+    /api/file still answers only for Markdown."""
+    with Server(ctx["bin"], FIXTURE_SITE, 4110):
+        pdf = get(4110, "/files/docs/doc.pdf")
+        png = get(4110, "/files/docs/pic.png")
+        tree = get(4110, "/api/tree")[2].decode("utf-8", "replace")
+        api_pdf = get(4110, "/api/file?path=docs/doc.pdf")[0]
+    pdf_ok = pdf[0] == 200 and pdf[1].get("content-type") == "application/pdf" \
+        and pdf[1].get("content-security-policy") == "sandbox allow-scripts allow-popups"
+    png_ok = png[0] == 200 and png[1].get("content-type") == "image/png"
+    listed = '"name":"pic.png"' in tree and '"name":"doc.pdf"' in tree
+    svg_hidden = '"name":"diagram.svg"' not in tree
+    ok = pdf_ok and png_ok and listed and svg_hidden and api_pdf != 200
+    return ok, (f"pdf={pdf[0]} {pdf[1].get('content-type')}; png={png[0]}; listed={listed}; "
+                f"svg not listed={svg_hidden}; api/file pdf={api_pdf}")
+
+
 @ac("AC-61")
 def ac_61(ctx):
     with Server(ctx["bin"], FIXTURE_SITE, 4110):
@@ -1255,7 +1282,7 @@ def main():
     for ac_id, m in sel:
         fn = REGISTRY.get(ac_id)
         if fn is None and ac_id.startswith("UT-"):
-            fn = cargo_unit_test
+            fn = node_unit_test if ac_id == "UT-28" else cargo_unit_test
         if fn is None:
             results.append((ac_id, m, "TODO", "not implemented in the runner yet"))
             continue

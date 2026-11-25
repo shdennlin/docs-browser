@@ -13,12 +13,18 @@ pub const IGNORED_NAMES: [&str; 5] = [".git", "node_modules", "dist", "build", "
 /// Extensions served by `/files/*`, compared case-insensitively (PRD 7.1).
 pub const SERVED_EXTENSIONS: &[&str] = &[
     "html", "htm", "md", "markdown", "css", "js", "mjs", "svg", "png", "jpg", "jpeg", "gif",
-    "webp", "avif", "ico", "bmp", "woff", "woff2", "ttf", "otf",
+    "webp", "avif", "ico", "bmp", "pdf", "woff", "woff2", "ttf", "otf",
 ];
 
-/// Extensions listed in the tree and previewed (PRD 7).
+/// Extensions listed in the tree and previewed as documents (PRD 7). Also used by search and by the
+/// file argument, which stay on documents only.
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["md", "markdown", "html", "htm"];
 
+/// Extensions listed in the tree (PRD 7.3): the documents, plus raster images and PDF, which the viewer
+/// shows directly from `/files/*`. SVG is not listed: it can carry script, so it is served but not shown.
+pub const LISTED_EXTENSIONS: &[&str] = &[
+    "md", "markdown", "html", "htm", "png", "jpg", "jpeg", "gif", "webp", "avif", "pdf",
+];
 /// Extensions accepted by `/api/file`.
 pub const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown"];
 
@@ -355,6 +361,16 @@ mod tests {
         assert_eq!(r.resolve("docs/drafts/b.md", Endpoint::ApiFile), Err(Denied::NotVisible));
         assert!(r.resolve("docs/keep.md", Endpoint::ApiFile).is_ok());
         assert_eq!(r.ignored(), extra.as_slice());
+    }
+
+    #[test]
+    fn ut_27_images_and_pdf_are_listed_and_served_but_svg_is_not_listed() {
+        assert!(has_extension(Path::new("docs/pic.PNG"), LISTED_EXTENSIONS));
+        assert!(has_extension(Path::new("a.pdf"), LISTED_EXTENSIONS));
+        assert!(!has_extension(Path::new("a.svg"), LISTED_EXTENSIONS));
+        assert!(!has_extension(Path::new("a.json"), LISTED_EXTENSIONS));
+        assert!(has_extension(Path::new("a.pdf"), SERVED_EXTENSIONS));
+        assert!(!has_extension(Path::new("a.pdf"), MARKDOWN_EXTENSIONS));
     }
 
     #[test]

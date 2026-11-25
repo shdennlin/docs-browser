@@ -9,6 +9,7 @@
   --banner-bg: #bf87001f; --err: #cf222e; --err-bg: #cf222e14;
   --mark-bg: #fff8c5; --mark-fg: #1f2328;
   --badge-md-bg: #ddf4ff; --badge-md-fg: #0550ae; --badge-html-bg: #fff1e5; --badge-html-fg: #953800;
+  --badge-img-bg: #dafbe1; --badge-img-fg: #1a7f37; --badge-pdf-bg: #ffebe9; --badge-pdf-fg: #cf222e;
   --control-bg: #8881; --quote: #57606a;
 }
 /* dark palette: used when the system is dark (unless the user chose light) and when the user chose dark */
@@ -21,6 +22,7 @@
     --banner-bg: #ffb86c26; --err: #ff5555; --err-bg: #ff555526;
     --mark-bg: #f1fa8c; --mark-fg: #282a36;
     --badge-md-bg: #bd93f933; --badge-md-fg: #bd93f9; --badge-html-bg: #ffb86c33; --badge-html-fg: #ffb86c;
+    --badge-img-bg: #50fa7b33; --badge-img-fg: #50fa7b; --badge-pdf-bg: #ff555533; --badge-pdf-fg: #ff5555;
     --control-bg: #44475a; --quote: #c4c9e2;
     /* rainbow headings */
     --h1: #ff5555; --h2: #ffb86c; --h3: #f1fa8c; --h4: #50fa7b; --h5: #8be9fd; --h6: #bd93f9;
@@ -34,6 +36,7 @@
     --banner-bg: #ffb86c26; --err: #ff5555; --err-bg: #ff555526;
     --mark-bg: #f1fa8c; --mark-fg: #282a36;
     --badge-md-bg: #bd93f933; --badge-md-fg: #bd93f9; --badge-html-bg: #ffb86c33; --badge-html-fg: #ffb86c;
+    --badge-img-bg: #50fa7b33; --badge-img-fg: #50fa7b; --badge-pdf-bg: #ff555533; --badge-pdf-fg: #ff5555;
     --control-bg: #44475a; --quote: #c4c9e2;
     /* rainbow headings */
     --h1: #ff5555; --h2: #ffb86c; --h3: #f1fa8c; --h4: #50fa7b; --h5: #8be9fd; --h6: #bd93f9;
@@ -77,6 +80,9 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 .badge { display: inline-block; min-width: 2.9em; margin-right: 6px; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1.5; text-align: center; letter-spacing: .02em; vertical-align: 1px; }
 .badge.md { background: var(--badge-md-bg); color: var(--badge-md-fg); }
 .badge.html { background: var(--badge-html-bg); color: var(--badge-html-fg); }
+.badge.img { background: var(--badge-img-bg); color: var(--badge-img-fg); }
+.badge.pdf { background: var(--badge-pdf-bg); color: var(--badge-pdf-fg); }
+#preview img.media-image { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 #tree a.selected .badge { background: #0003; color: inherit; }
 .tree-empty { padding: 8px 4px; color: var(--muted); }
 

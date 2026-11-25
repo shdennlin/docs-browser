@@ -13,6 +13,9 @@
   var MARKDOWN = ['md', 'markdown'];
   var HTML = ['html', 'htm'];
   var IMAGES = ['svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp'];
+  // Images the viewer shows and lists in the tree (SVG is excluded: it can carry script).
+  var PREVIEW_IMAGES = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'];
+  var PDF = ['pdf'];
 
   // Lower-cased extension of the last path segment; a dot file such as ".env" has none (as in Rust).
   function ext(path) {
@@ -25,6 +28,15 @@
   function isMarkdown(path) { return inList(MARKDOWN, ext(path)); }
   function isHtml(path) { return inList(HTML, ext(path)); }
   function isSupported(path) { return inList(SUPPORTED, ext(path)); }
+  function isPreviewImage(path) { return inList(PREVIEW_IMAGES, ext(path)); }
+  function isPdf(path) { return inList(PDF, ext(path)); }
+  // The small label before a tree entry: its CSS class and its text (PRD 7.3).
+  function badgeFor(path) {
+    if (isHtml(path)) return { cls: 'html', text: 'HTML' };
+    if (isPreviewImage(path)) return { cls: 'img', text: 'IMG' };
+    if (isPdf(path)) return { cls: 'pdf', text: 'PDF' };
+    return { cls: 'md', text: 'MD' };
+  }
 
   // ---------------------------------------------------------------- slugs (GitHub style)
   function slugify(text) {
@@ -330,6 +342,8 @@
     queryTokens: queryTokens, fuzzyMatch: fuzzyMatch, fuzzyFiles: fuzzyFiles, collectDirs: collectDirs,
     formatAgo: formatAgo,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
+    isImage: isPreviewImage, isPdf: isPdf,
+    badgeFor: badgeFor,
     slugify: slugify, makeSlugger: makeSlugger,
     encodePath: encodePath, resolveRelative: resolveRelative, classifyLink: classifyLink,
     rewriteImageSrc: rewriteImageSrc,

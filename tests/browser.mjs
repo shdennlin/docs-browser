@@ -1219,6 +1219,28 @@ checks['AC-93'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-95: images and PDF files are listed with badges and shown directly (PRD 7.3, 7.4)
+checks['AC-95'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/'); await p.ready();
+    const tree = await q("[...document.querySelectorAll('#tree a[data-path]')].filter(a => /pic\\.png$|doc\\.pdf$/.test(a.dataset.path)).map(a => ({ p: a.dataset.path, badge: (a.querySelector('.badge') || {}).textContent }))");
+    await p.goto('/?file=docs/pic.png'); await p.ready();
+    await waitFor(() => p.ev("(function () { var i = document.querySelector('#preview img.media-image'); return !!i && i.complete && i.naturalWidth > 0; })()"), 5000, 50);
+    const img = await q("(function () { var i = document.querySelector('#preview img.media-image'); return { w: i.naturalWidth, src: i.getAttribute('src').split('?')[0] }; })()");
+    await p.goto('/?file=docs/doc.pdf'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#preview iframe.pdf-frame')"), 5000, 50);
+    const pdf = await q("(function () { var f = document.querySelector('#preview iframe.pdf-frame'); return { src: f.getAttribute('src'), wide: document.getElementById('preview').classList.contains('wide') }; })()");
+    await waitFor(() => p.ev("!document.getElementById('fileinfo').hidden"), 5000, 50);
+    const info = await q("!document.getElementById('fileinfo').hidden");
+    const ok = tree.some(t => t.p === 'docs/pic.png' && t.badge === 'IMG') && tree.some(t => t.p === 'docs/doc.pdf' && t.badge === 'PDF')
+      && img.w === 1 && img.src === '/files/docs/pic.png'
+      && pdf.src === '/files/docs/doc.pdf' && pdf.wide && info;
+    return [ok, JSON.stringify({ tree, img, pdf, info })];
+  } finally { await p.close(); }
+};
+
 // ---- AC-90: every code block has a copy button; it copies the code and not the button's text
 checks['AC-90'] = async (cdp) => {
   const p = await openPage(cdp, null);

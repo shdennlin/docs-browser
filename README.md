@@ -51,8 +51,8 @@ docs-browser [OPTIONS] [DIRECTORY]
 - Exit codes: `0` normal stop, `1` runtime error such as a port already in use, `2` bad usage or a
   directory that is missing, not a directory, or cannot be read.
 - The URL is printed at startup (`Serving <folder> at http://127.0.0.1:4747`). A file argument also prints `Opening <url>`, the page for that file. If 4747 is busy and `--port` was not given, the next free port is used and a `note:` line says so.
-- Only Markdown (`.md`, `.markdown`) and HTML (`.htm`, `.html`) files are listed. A page can also load the
-  CSS, JavaScript, images and fonts next to it. Nothing else is served.
+- Listed: Markdown (`.md`, `.markdown`), HTML (`.htm`, `.html`), images (`.png`, `.jpg`, `.jpeg`, `.gif`,
+  `.webp`, `.avif`), and PDF. Images and PDF are shown directly. A page can also load the CSS, JavaScript, images and fonts next to it.
 - `/?file=docs/architecture.md#section` opens a file directly; the address bar always shows the current file.
 - Drag the divider between the list and the preview to change the width of the list (keyboard: focus the
   divider, then Left, Right or Home; double click resets it). The width is remembered by the browser.

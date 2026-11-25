@@ -574,6 +574,7 @@ pub fn content_type_for(ext: &str) -> &'static str {
         "gif" => "image/gif",
         "webp" => "image/webp",
         "avif" => "image/avif",
+        "pdf" => "application/pdf",
         "ico" => "image/x-icon",
         "bmp" => "image/bmp",
         "woff" => "font/woff",
