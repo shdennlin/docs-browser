@@ -104,10 +104,11 @@ async fn run() -> Result<(), Failure> {
         message: format!("cannot use directory: {}: {e}", shown(&dir)),
     })?;
     let root = resolver.root().to_path_buf();
-    // The file must be servable under the same rules as `/api/file` (hidden files need --include-hidden).
+    // The file must be servable under the same rules as `/files/*` (hidden files need --include-hidden).
+    // HTML entries load through `/files/*`, so the check uses that endpoint's extension whitelist.
     let file_rel = match &file_entry {
         Some(e) => {
-            if let Err(d) = resolver.resolve(&e.rel, Endpoint::ApiFile) {
+            if let Err(d) = resolver.resolve(&e.rel, Endpoint::Files) {
                 return Err(Failure { code: 2, message: format!("cannot open file: {}: {}", shown(&cli.directory), d.reason()) });
             }
             Some(e.rel.clone())
