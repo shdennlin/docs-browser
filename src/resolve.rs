@@ -349,6 +349,9 @@ mod tests {
         outer.write("docs/keep.md", "# k");
         let r = Resolver::new(&outer.path, false).unwrap().with_ignored(extra.clone());
         assert_eq!(r.resolve("drafts/a.md", Endpoint::Files), Err(Denied::NotVisible));
+        // A case variant reaches the same folder on a case-insensitive volume (macOS); the canonical
+        // path check in step 6 must still refuse it.
+        assert!(r.resolve("Drafts/a.md", Endpoint::Files).is_err(), "case variant of an ignored name");
         assert_eq!(r.resolve("docs/drafts/b.md", Endpoint::ApiFile), Err(Denied::NotVisible));
         assert!(r.resolve("docs/keep.md", Endpoint::ApiFile).is_ok());
         assert_eq!(r.ignored(), extra.as_slice());
