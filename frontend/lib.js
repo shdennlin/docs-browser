@@ -16,6 +16,8 @@
   // Images the viewer shows and lists in the tree (SVG is excluded: it can carry script).
   var PREVIEW_IMAGES = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'];
   var PDF = ['pdf'];
+  // Text previews: shown as plain text from /api/file, highlighted for JSON and YAML (PRD 7.4).
+  var PREVIEW_TEXT = ['json', 'yaml', 'yml'];
 
   // Lower-cased extension of the last path segment; a dot file such as ".env" has none (as in Rust).
   function ext(path) {
@@ -30,11 +32,16 @@
   function isSupported(path) { return inList(SUPPORTED, ext(path)); }
   function isPreviewImage(path) { return inList(PREVIEW_IMAGES, ext(path)); }
   function isPdf(path) { return inList(PDF, ext(path)); }
+  function isPreviewText(path) { return inList(PREVIEW_TEXT, ext(path)); }
+  // The highlighting language of a text preview (highlight.js name).
+  function textLanguage(path) { return ext(path) === 'json' ? 'json' : 'yaml'; }
   // The small label before a tree entry: its CSS class and its text (PRD 7.3).
   function badgeFor(path) {
     if (isHtml(path)) return { cls: 'html', text: 'HTML' };
     if (isPreviewImage(path)) return { cls: 'img', text: 'IMG' };
     if (isPdf(path)) return { cls: 'pdf', text: 'PDF' };
+    if (ext(path) === 'json') return { cls: 'json', text: 'JSON' };
+    if (isPreviewText(path)) return { cls: 'yaml', text: 'YAML' };
     return { cls: 'md', text: 'MD' };
   }
 
@@ -342,7 +349,7 @@
     queryTokens: queryTokens, fuzzyMatch: fuzzyMatch, fuzzyFiles: fuzzyFiles, collectDirs: collectDirs,
     formatAgo: formatAgo,
     ext: ext, isMarkdown: isMarkdown, isHtml: isHtml, isSupported: isSupported,
-    isImage: isPreviewImage, isPdf: isPdf,
+    isImage: isPreviewImage, isPdf: isPdf, isPreviewText: isPreviewText, textLanguage: textLanguage,
     badgeFor: badgeFor,
     slugify: slugify, makeSlugger: makeSlugger,
     encodePath: encodePath, resolveRelative: resolveRelative, classifyLink: classifyLink,

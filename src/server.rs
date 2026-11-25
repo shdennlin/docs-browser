@@ -424,7 +424,13 @@ async fn api_file(
         log_denied("missing-param", &method, &uri.to_string());
         return StatusCode::NOT_FOUND.into_response();
     };
-    let resolved = match state.resolver.resolve(input, Endpoint::ApiFile) {
+    // JSON and YAML previews use the same reader and cap; they are not on the `/files/*` whitelist.
+    let endpoint = if crate::resolve::has_extension(std::path::Path::new(input), crate::resolve::PREVIEW_TEXT_EXTENSIONS) {
+        Endpoint::ApiText
+    } else {
+        Endpoint::ApiFile
+    };
+    let resolved = match state.resolver.resolve(input, endpoint) {
         Ok(r) => r,
         Err(d) => {
             log_denied(d.reason(), &method, &uri.to_string());

@@ -80,6 +80,7 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 .badge { display: inline-block; min-width: 2.9em; margin-right: 6px; padding: 0 4px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1.5; text-align: center; letter-spacing: .02em; vertical-align: 1px; }
 .badge.md { background: var(--badge-md-bg); color: var(--badge-md-fg); }
 .badge.html { background: var(--badge-html-bg); color: var(--badge-html-fg); }
+.badge.json, .badge.yaml { background: var(--badge-md-bg); color: var(--badge-md-fg); }
 .badge.img { background: var(--badge-img-bg); color: var(--badge-img-fg); }
 .badge.pdf { background: var(--badge-pdf-bg); color: var(--badge-pdf-fg); }
 #preview img.media-image { display: block; max-width: 100%; height: auto; margin: 0 auto; }

@@ -23,8 +23,19 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &["md", "markdown", "html", "htm"];
 /// Extensions listed in the tree (PRD 7.3): the documents, plus raster images and PDF, which the viewer
 /// shows directly from `/files/*`. SVG is not listed: it can carry script, so it is served but not shown.
 pub const LISTED_EXTENSIONS: &[&str] = &[
-    "md", "markdown", "html", "htm", "png", "jpg", "jpeg", "gif", "webp", "avif", "pdf",
+    "md", "markdown", "html", "htm", "png", "jpg", "jpeg", "gif", "webp", "avif", "pdf", "json",
+    "yaml", "yml",
 ];
+
+/// Text files previewed as plain text through `/api/file` only (PRD 7.4). They are not on the
+/// `/files/*` whitelist, so the page cannot load them directly.
+pub const PREVIEW_TEXT_EXTENSIONS: &[&str] = &["json", "yaml", "yml"];
+
+/// Whether the tree and the watcher index a file: a whitelisted file, or a text preview.
+pub fn is_indexed(path: &Path) -> bool {
+    has_extension(path, SERVED_EXTENSIONS) || has_extension(path, PREVIEW_TEXT_EXTENSIONS)
+}
+
 /// Extensions accepted by `/api/file`.
 pub const MARKDOWN_EXTENSIONS: &[&str] = &["md", "markdown"];
 
@@ -34,6 +45,8 @@ pub enum Endpoint {
     Files,
     /// `/api/file`: Markdown files only.
     ApiFile,
+    /// `/api/file` for previews: Markdown, plus the text previews (JSON and YAML).
+    ApiText,
 }
 
 /// Why a path was refused. Every variant is a 404 on the wire except `UnsupportedType` (415).
@@ -228,6 +241,13 @@ impl Resolver {
                     return Err(Denied::NotWhitelisted);
                 }
             }
+            Endpoint::ApiText => {
+                let listed_ok = has_extension(&listed, MARKDOWN_EXTENSIONS) || has_extension(&listed, PREVIEW_TEXT_EXTENSIONS);
+                let target_ok = has_extension(&target, MARKDOWN_EXTENSIONS) || has_extension(&target, PREVIEW_TEXT_EXTENSIONS);
+                if !listed_ok || !target_ok {
+                    return Err(Denied::UnsupportedType);
+                }
+            }
             Endpoint::ApiFile => {
                 if !has_extension(&listed, MARKDOWN_EXTENSIONS)
                     || !has_extension(&target, MARKDOWN_EXTENSIONS)
@@ -368,9 +388,28 @@ mod tests {
         assert!(has_extension(Path::new("docs/pic.PNG"), LISTED_EXTENSIONS));
         assert!(has_extension(Path::new("a.pdf"), LISTED_EXTENSIONS));
         assert!(!has_extension(Path::new("a.svg"), LISTED_EXTENSIONS));
-        assert!(!has_extension(Path::new("a.json"), LISTED_EXTENSIONS));
+        assert!(has_extension(Path::new("a.json"), LISTED_EXTENSIONS));
         assert!(has_extension(Path::new("a.pdf"), SERVED_EXTENSIONS));
         assert!(!has_extension(Path::new("a.pdf"), MARKDOWN_EXTENSIONS));
+    }
+
+    #[test]
+    fn ut_29_text_previews_are_api_only_and_never_on_the_files_whitelist() {
+        let outer = TestDir::new("ut29");
+        outer.write("docs/data.json", "{}");
+        outer.write("docs/config.yaml", "a: 1");
+        outer.write("docs/notes.md", "# n");
+        outer.write("docs/pic.png", "x");
+        let r = Resolver::new(&outer.path, false).unwrap();
+        assert!(r.resolve("docs/data.json", Endpoint::ApiText).is_ok());
+        assert!(r.resolve("docs/config.yaml", Endpoint::ApiText).is_ok());
+        assert!(r.resolve("docs/notes.md", Endpoint::ApiText).is_ok());
+        assert_eq!(r.resolve("docs/data.json", Endpoint::Files), Err(Denied::NotWhitelisted));
+        assert_eq!(r.resolve("docs/config.yaml", Endpoint::Files), Err(Denied::NotWhitelisted));
+        assert_eq!(r.resolve("docs/data.json", Endpoint::ApiFile), Err(Denied::UnsupportedType));
+        assert_eq!(r.resolve("docs/pic.png", Endpoint::ApiText), Err(Denied::UnsupportedType));
+        assert!(is_indexed(Path::new("a.json")));
+        assert!(!is_indexed(Path::new("a.txt")));
     }
 
     #[test]

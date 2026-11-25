@@ -1241,6 +1241,26 @@ checks['AC-95'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-98: JSON and YAML open as text in the preview, highlighted, with JSON and YAML badges (PRD 7.4)
+checks['AC-98'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/'); await p.ready();
+    const tree = await q("[...document.querySelectorAll('#tree a[data-path]')].filter(a => /data\\.json$|config\\.yaml$/.test(a.dataset.path)).map(a => ({ p: a.dataset.path, badge: (a.querySelector('.badge') || {}).textContent }))");
+    await p.goto('/?file=docs/data.json'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#preview pre.text-preview code')"), 5000, 50);
+    const json = await q("(function () { var c = document.querySelector('#preview pre.text-preview code'); return { text: c.textContent, highlighted: c.querySelectorAll('span').length > 0, cls: c.className }; })()");
+    await p.goto('/?file=docs/config.yaml'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#preview pre.text-preview code')"), 5000, 50);
+    const yaml = await q("(function () { var c = document.querySelector('#preview pre.text-preview code'); return { text: c.textContent, highlighted: c.querySelectorAll('span').length > 0 }; })()");
+    const ok = tree.some(t => t.p === 'docs/data.json' && t.badge === 'JSON') && tree.some(t => t.p === 'docs/config.yaml' && t.badge === 'YAML')
+      && json.text.indexOf('"name": "fixture"') !== -1 && json.highlighted && json.cls.indexOf('language-json') !== -1
+      && yaml.text.indexOf('port: 4747') !== -1 && yaml.highlighted;
+    return [ok, JSON.stringify({ tree, json: { highlighted: json.highlighted, cls: json.cls }, yaml: { highlighted: yaml.highlighted } })];
+  } finally { await p.close(); }
+};
+
 // ---- AC-90: every code block has a copy button; it copies the code and not the button's text
 checks['AC-90'] = async (cdp) => {
   const p = await openPage(cdp, null);

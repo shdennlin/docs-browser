@@ -12,6 +12,13 @@ test('ut_28 media types and tree badges', () => {
   assert.deepEqual(L.badgeFor('a.htm'), { cls: 'html', text: 'HTML' });
   assert.deepEqual(L.badgeFor('pic.jpg'), { cls: 'img', text: 'IMG' });
   assert.deepEqual(L.badgeFor('report.pdf'), { cls: 'pdf', text: 'PDF' });
+  assert.equal(L.isPreviewText('data.json'), true);
+  assert.equal(L.isPreviewText('ci.yml'), true);
+  assert.equal(L.isPreviewText('a.txt'), false);
+  assert.deepEqual(L.badgeFor('data.json'), { cls: 'json', text: 'JSON' });
+  assert.deepEqual(L.badgeFor('ci.yaml'), { cls: 'yaml', text: 'YAML' });
+  assert.equal(L.textLanguage('x.yml'), 'yaml');
+  assert.equal(L.textLanguage('x.json'), 'json');
 });
 
 test('ac_16 slugs follow the GitHub rules', () => {

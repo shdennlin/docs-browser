@@ -49,6 +49,7 @@
 | v1.4.39 (2026-11-25) | Release 0.3.0: includes v1.4.34 to v1.4.38 (dark Mermaid accents, full-screen Mermaid viewer, version in the footer, file information bar). Security: `GET /api/info` no longer runs `git status`, which executes a repository's configured clean filters; `dirty` is computed with filter-free commands (UT-21). `Cargo.toml` and the README install tag updated ; the Linux container suite passes all 108 rows |
 | v1.4.40 (2026-11-25) | `--open` is the default (`--no-open` turns it off); without `--port`, a busy 4747 moves to the next free port from 4748 to 4766 with a note, an explicit busy port is still an error (9, 9.1; AC-64, AC-88, UT-22); the tests pass `--no-open` |
 | v1.4.41 (2026-11-25) | `docs-browser <file.md>` serves the nearest enclosing git repository (or the file's folder), opens that file with `?file=`, and prints the root and the URL (9, 9.1; AC-60, AC-89, UT-23, UT-24) |
+| v1.4.46 (2026-11-25) | JSON, YAML and YML are listed and previewed as text through `/api/file` (7.4; AC-97, AC-98, UT-29); `/files/*` still refuses them; this widens the exposure recorded under R5 |
 | v1.4.45 (2026-11-25) | Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`) and PDF are listed in the tree with `IMG`/`PDF` badges and shown directly (7.3, 7.4; AC-95, AC-96, UT-27, UT-28); PDF is added to the `/files/*` whitelist; the file argument, search and `/api/file` keep their document-only rules |
 | v1.4.44 (2026-11-25) | Expanded folders are remembered per served root in `localStorage` (7.3; AC-92, UT-26); the file information bar links to the file in VS Code on loopback (7.3; AC-93, AC-94); `/api/version` returns `rootKey`; `/api/info` returns `absolutePath` on loopback only |
 | v1.4.43 (2026-11-25) | `--ignore NAME` (repeatable) hides exact names at any depth and only adds to the built-in list (9.1, 7.1; AC-91, UT-25); an HTML file argument is accepted, because the startup check uses the `/files/*` whitelist; code-copy button on code blocks (7.4; AC-90); §14 and D3/D4 record the decisions not taken |
@@ -156,7 +157,7 @@ The MVP does not provide:
 | R2 | DNS rebinding | A remote page reads the served directory through the loopback server | `Host` and `Origin` validation (§12.1). **Accepted** for non-loopback binds (R1) |
 | R3 | An HTML file's script reads other files | Whole served root | `/files/*` sent with `Content-Security-Policy: sandbox`, plus iframe `sandbox` (§6, §12.4) |
 | R4 | Symlink, `..` or case-variant escape | Files outside the root, or ignored folders | Canonical-path check, both-path visibility, case-insensitive comparison (§12.2, §12.3) |
-| R5 | Secrets inside the root | Credentials | Whitelist of served extensions (§7.1); hidden and ignored paths unreadable by default. **Residual, accepted**: a whitelisted file (e.g. `.md`) containing a secret is served |
+| R5 | Secrets inside the root | Credentials | Whitelist of served extensions (§7.1); hidden and ignored paths unreadable by default. JSON and YAML previews (§7.4) are readable through `/api/file` only, and such files often hold credentials: this widens the exposure accepted here. **Residual, accepted**: a whitelisted file (e.g. `.md`) containing a secret is served |
 | R6 | XSS through Markdown or Mermaid | Same origin as the app shell | Raw HTML off, link-scheme allowlist, Mermaid `strict`, app-shell CSP (§6, §12.5) |
 | R7 | Tampered vendored JavaScript | Everything the app shell can do | Pinned versions plus SHA-256 checked by a test (§12.6) |
 | R8 | Scanner or watcher exhausts resources | Local slowdown | Entry cap, depth cap, ignored folders never scanned or watched (§7, §8) |
@@ -284,7 +285,7 @@ Local relative assets work, because `<img>`, `<link rel=stylesheet>` and `<scrip
 The sidebar:
 
 - Scans directories automatically
-- Lists folders and the files of the **listed** types only: the documents (`.md`, `.markdown`, `.html`, `.htm`), the images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`) and `.pdf` (§7.4). SVG is served but not listed, because it can carry script.
+- Lists folders and the files of the **listed** types only: the documents (`.md`, `.markdown`, `.html`, `.htm`), the images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.avif`), `.pdf` and the text previews `.json`, `.yaml`, `.yml` (§7.4). SVG is served but not listed, because it can carry script.
 - Collapses and expands folders
 - Sorts folders before files
 - Hides folders that contain no supported file at any depth
@@ -335,6 +336,7 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 - **Copy code:** every code block (not Mermaid) has a small `Copy` button at its top right. It copies the block's text without the button's label and shows `✓` for about a second; a failed copy shows `!`. Diagrams and files without code blocks have none (AC-90).
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Images and PDF:** an image is shown at its natural size, scaled down to the panel width, straight from `/files/*`. A PDF fills the right panel like an HTML page, in a frame that gets the usual `/files/*` sandbox header (Chromium still renders the PDF there, measured). The tree marks them `IMG` and `PDF`. Both show the file information bar (AC-95).
+- **JSON and YAML:** a `.json`, `.yaml` or `.yml` file is listed with a `JSON` or `YAML` badge and shown as text, highlighted, in the preview. The text comes from `/api/file`, with the same reader and the same 5 MiB cap as Markdown; `/files/*` still refuses these types, so an HTML page cannot load them. No YAML is parsed and nothing is reformatted (AC-98, AC-97).
 - **Settings:** the `⚙` button in the bar at the bottom of the file list opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
 - **Full-screen diagram:** every rendered Mermaid diagram has a small `⤢` button (a text glyph, so that a diagram stays the only `<svg>` in its block) at its top right (dimmed, full strength on hover or focus). It opens a copy of the diagram over the whole page, fitted to the window (at most 400 %). Dragging with the left mouse button pans; the mouse wheel (or a trackpad pinch) zooms around the pointer, so the point under the pointer stays under it; the zoom stays between 5 % and 2000 %. A bar at the top right has `−`, the zoom level, `+`, `Fit` and `×`; a double click and the key `0` also fit, `+` and `-` zoom. `Esc` or `×` closes it; while it is open the other page shortcuts are ignored. Diagrams that failed to render have no button. The copy keeps the diagram's colours.
@@ -865,6 +867,8 @@ site/
 | AC-92 | M3 | §7.3 remembered folders | Browser `/`: clear the `docs-browser.expanded.*` keys; open `docs`; reload. Then store `docs` and `gone/folder` under the same key and reload. Then set another root's key; then `Reset to defaults` | After the reload `docs` is open; the stored list keeps only `docs`; the other root's key is untouched by this page; `Reset to defaults` removes every key and leaves no folder open |
 | AC-93 | M3 | §7.3 VS Code link | Browser `/?file=docs/code.md`: read the `Open in VS Code` link of the file information bar (its `href` only; the link is never clicked) | The link reads `Open in VS Code`; its `href` is `vscode://file/` followed by the absolute path of `docs/code.md`, percent-encoded per segment |
 | AC-94 | M5 | §7.3 absolute path and root key | Start the server on loopback and on `--host 0.0.0.0` with the site fixture; read `/api/info?path=docs/code.md` and `/api/version` on each | `absolutePath` is present on loopback and absent on `0.0.0.0`; `rootKey` is 16 lowercase hex digits and equal on both |
+| AC-97 | M5 | §7.4 JSON and YAML previews | `GET /api/file?path=docs/data.json` and `docs/config.yaml`; `GET /files/docs/data.json`; `GET /api/tree` on the site fixture | The two `/api/file` answers are `200` with `text/plain`, and the bodies hold the fixture text; `/files/docs/data.json` answers `404`; the tree lists `data.json` and `config.yaml` |
+| AC-98 | M3 | §7.4 JSON and YAML previews | Browser `/`: read the `JSON` and `YAML` badges; then `/?file=docs/data.json` and `/?file=docs/config.yaml` | The badges read `JSON` and `YAML`; each preview is a `pre.text-preview` whose `code` holds the file text, highlighted (it has spans); the JSON code has the class `language-json` |
 | AC-90 | M3 | §7.4 code copy | Browser `/?file=docs/code.md`: click the `Copy` button of the first code block; then `/?file=docs/palette.md` | Each code block has one button and the mermaid diagrams have none; after the click the button shows `✓` and the block's code text is unchanged |
 
 ### 13.5 Unit tests
@@ -897,6 +901,7 @@ site/
 | UT-24 | M5 | §9.1 file URL | `?file=` value is percent-encoded per byte with `/` kept; the base URL is kept |
 | UT-27 | M3 | §7.1, §7.4 extension sets | `LISTED_EXTENSIONS` has the documents, the raster images and `pdf`, and not `svg` or `json`; `pdf` is served and is not a Markdown extension |
 | UT-28 | M3 | §7.3 badges and media types | `frontend/lib.test.js` `ut_28`: `isImage`, `isPdf` and `badgeFor` give `MD`, `HTML`, `IMG` and `PDF` |
+| UT-29 | M5 | §7.4 text previews | `docs/data.json`, `docs/config.yaml` and `docs/notes.md` read through `/api/file` (`ApiText`); `/files/*` refuses the JSON and YAML (`NotWhitelisted`); `/api/file` refuses a PNG; JSON is indexed and `.txt` is not |
 | UT-26 | M5 | §7.3 root key | `root_key` is 16 lowercase hex digits, the same for the same root, different for another root, and does not contain the path |
 | UT-25 | M5 | §9.1 `--ignore` | A listed name hides that exact component at any depth; a longer name, a substring or another case stays visible; the built-in five stay hidden; a request for a hidden path is `NotVisible` |
 
@@ -927,6 +932,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.3, §11 file information | AC-87, UT-19, UT-20, UT-21 |
 | §7.3 remembered folders, VS Code link | AC-92, AC-93, AC-94, UT-26 |
 | §7.3, §7.4 images and PDF | AC-95, AC-96, UT-27, UT-28 |
+| §7.4 JSON and YAML previews | AC-97, AC-98, UT-29 |
 | §7.4 code copy | AC-90 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
@@ -949,7 +955,6 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 - Polling fallback when the OS watcher is unavailable
 - Browser automation for all browser checks in §13
 - Table of contents
-- JSON / YAML preview
 - Keyboard navigation
 - Config file such as `.docs-browser.json`: not adopted; revisit only with a concrete need
 - Prebuilt cross-platform release binaries

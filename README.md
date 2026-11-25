@@ -52,7 +52,8 @@ docs-browser [OPTIONS] [DIRECTORY]
   directory that is missing, not a directory, or cannot be read.
 - The URL is printed at startup (`Serving <folder> at http://127.0.0.1:4747`). A file argument also prints `Opening <url>`, the page for that file. If 4747 is busy and `--port` was not given, the next free port is used and a `note:` line says so.
 - Listed: Markdown (`.md`, `.markdown`), HTML (`.htm`, `.html`), images (`.png`, `.jpg`, `.jpeg`, `.gif`,
-  `.webp`, `.avif`), and PDF. Images and PDF are shown directly. A page can also load the CSS, JavaScript, images and fonts next to it.
+  `.webp`, `.avif`), PDF, and JSON and YAML (`.json`, `.yaml`, `.yml`). Images and PDF are shown directly;
+  JSON and YAML are shown as text. A page can also load the CSS, JavaScript, images and fonts next to it.
 - `/?file=docs/architecture.md#section` opens a file directly; the address bar always shows the current file.
 - Drag the divider between the list and the preview to change the width of the list (keyboard: focus the
   divider, then Left, Right or Home; double click resets it). The width is remembered by the browser.
@@ -69,8 +70,9 @@ The server is read-only and meant for one person on one machine.
 - Every request path is resolved against the canonical root. `..`, absolute paths, symlinks that leave the
   folder, and case variants such as `Node_Modules` are refused with a plain 404.
 - `.git`, `node_modules`, `dist`, `build` and `.cache` are never served. Dot-prefixed files are hidden unless
-  you pass `--include-hidden`. File types outside the whitelist (for example `.env`, `.json`, `.txt`) are
-  never served.
+  you pass `--include-hidden`. File types outside the whitelist (for example `.env`, `.txt`) are never served.
+  JSON and YAML files are readable as text through the viewer, but the page cannot load them directly. They
+  often hold credentials, so keep secrets out of folders you open with docs-browser.
 - HTML files run inside a sandboxed `<iframe>` without `allow-same-origin`, and every `/files/*` response also
   carries `Content-Security-Policy: sandbox`, so a page cannot read your other files through the server.
   Because of that, JavaScript in a previewed page cannot `fetch()` your local files.

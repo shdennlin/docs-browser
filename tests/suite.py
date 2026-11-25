@@ -506,7 +506,7 @@ def ac_36(ctx):
 CHROME_DEFAULT = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IDS = ["AC-03b", "AC-04", "AC-05", "AC-06", "AC-07b", "AC-09", "AC-10", "AC-12b",
                "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70", "AC-71", "AC-72", "AC-73", "AC-74", "AC-75", "AC-76", "AC-77", "AC-78", "AC-79", "AC-80", "AC-81", "AC-82", "AC-83", "AC-84", "AC-85", "AC-86", "AC-87",
-               "AC-90", "AC-92", "AC-93", "AC-95"]
+               "AC-90", "AC-92", "AC-93", "AC-95", "AC-98"]
 
 
 def run_browser(ctx, base, ids):
@@ -1044,6 +1044,22 @@ def ac_96(ctx):
     ok = pdf_ok and png_ok and listed and svg_hidden and api_pdf != 200
     return ok, (f"pdf={pdf[0]} {pdf[1].get('content-type')}; png={png[0]}; listed={listed}; "
                 f"svg not listed={svg_hidden}; api/file pdf={api_pdf}")
+
+
+@ac("AC-97")
+def ac_97(ctx):
+    """JSON and YAML are listed and previewed through /api/file (text/plain, same cap as Markdown) but are not
+    on the /files/* whitelist, so the page cannot load them directly."""
+    with Server(ctx["bin"], FIXTURE_SITE, 4110):
+        js = get(4110, "/api/file?path=docs/data.json")
+        ym = get(4110, "/api/file?path=docs/config.yaml")
+        direct = get(4110, "/files/docs/data.json")[0]
+        tree = get(4110, "/api/tree")[2].decode("utf-8", "replace")
+    js_ok = js[0] == 200 and js[1].get("content-type", "").startswith("text/plain") and b'"name": "fixture"' in js[2]
+    ym_ok = ym[0] == 200 and b"port: 4747" in ym[2]
+    listed = '"name":"data.json"' in tree and '"name":"config.yaml"' in tree
+    ok = js_ok and ym_ok and listed and direct == 404
+    return ok, f"api json={js[0]}; api yaml={ym[0]}; /files json={direct}; listed={listed}"
 
 
 @ac("AC-61")

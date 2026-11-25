@@ -588,6 +588,27 @@
     }
   }
 
+  // JSON and YAML files are shown as text from `/api/file` (same reader and size cap as Markdown). The file
+  // text only ever enters through textContent; highlight.js then colours the element and escapes it itself.
+  async function renderText(path, token) {
+    var res = await fetch('/api/file?path=' + encodeURIComponent(path), { cache: 'no-store' });
+    if (token !== state.token) return;
+    if (res.status === 404) { state.missing = true; return showState('File not found'); }
+    if (!res.ok) throw new Error('request failed: ' + res.status);
+    var text = await res.text();
+    if (token !== state.token) return;
+    var pre = document.createElement('pre');
+    pre.className = 'text-preview';
+    var code = document.createElement('code');
+    var lang = L.textLanguage(path);
+    code.className = 'language-' + lang;
+    code.textContent = text;
+    pre.appendChild(code);
+    clear(els.preview);
+    els.preview.appendChild(pre);
+    if (window.hljs && window.hljs.getLanguage && window.hljs.getLanguage(lang)) window.hljs.highlightElement(code);
+  }
+
   async function renderHtml(path, token) {
     var head = await fetch('/files/' + L.encodePath(path), { method: 'HEAD' });
     if (token !== state.token) return;
@@ -690,6 +711,7 @@
     loadInfo(path, token);
     try {
       if (L.isImage(path) || L.isPdf(path)) await renderMedia(path, token);
+      else if (L.isPreviewText(path)) await renderText(path, token);
       else if (L.isHtml(path)) await renderHtml(path, token);
       else await renderMarkdown(path, hash, token); // other types: the server answers 404 or 415
     } catch (e) {

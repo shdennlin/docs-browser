@@ -12,7 +12,7 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
 use tokio::sync::mpsc;
 
-use crate::resolve::{has_extension, rel_to_string, visible, Resolver, SERVED_EXTENSIONS};
+use crate::resolve::{is_indexed, rel_to_string, visible, Resolver};
 use crate::server::AppState;
 use crate::tree::{try_scan, TreeState};
 
@@ -81,7 +81,7 @@ pub fn classify(resolver: &Resolver, tree: &TreeState, paths: &HashSet<PathBuf>)
             Ok(meta) => {
                 if let Some(listed) = tree.aliases.get(&rel_s) {
                     changed.extend(listed.iter().cloned());
-                } else if meta.is_file() && has_extension(rel, SERVED_EXTENSIONS) {
+                } else if meta.is_file() && is_indexed(rel) {
                     tree_dirty = true; // a new visible whitelisted file
                 }
             }

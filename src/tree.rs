@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::resolve::{
-    has_extension, rel_to_string, visible, Resolver, LISTED_EXTENSIONS, SERVED_EXTENSIONS,
+    has_extension, is_indexed, rel_to_string, visible, Resolver, LISTED_EXTENSIONS,
 };
 
 /// Entry cap of PRD 7.2.
@@ -196,9 +196,7 @@ impl Scanner<'_> {
                 }
             } else {
                 // Index every visible whitelisted file; list only the previewable ones.
-                if !has_extension(Path::new(&name), SERVED_EXTENSIONS)
-                    || !has_extension(&canonical, SERVED_EXTENSIONS)
-                {
+                if !is_indexed(Path::new(&name)) || !is_indexed(&canonical) {
                     continue;
                 }
                 self.count += 1;
