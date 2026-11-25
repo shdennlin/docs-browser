@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::resolve::{has_extension, SUPPORTED_EXTENSIONS};
+use crate::resolve::{has_extension, LISTED_EXTENSIONS};
 
 #[derive(Debug, PartialEq)]
 pub struct Entry {
@@ -32,8 +32,9 @@ pub fn resolve_entry(input: &Path) -> Result<Entry, String> {
     if !meta.is_file() {
         return Err("not a file".to_string());
     }
-    if !has_extension(input, SUPPORTED_EXTENSIONS) {
-        return Err("not a Markdown or HTML file".to_string());
+    // The same types the tree lists (PRD 7.4): documents, images, PDF, JSON and YAML. SVG and the rest are refused.
+    if !has_extension(input, LISTED_EXTENSIONS) {
+        return Err("not a Markdown, HTML, image, PDF, JSON or YAML file".to_string());
     }
     let canon = fs::canonicalize(input).map_err(|e| format!("cannot read file: {e}"))?;
     let root = root_for_file(&canon);
@@ -101,11 +102,30 @@ mod tests {
         assert_eq!(e.root, fs::canonicalize(&plain).unwrap());
         assert_eq!(e.rel, "p.md");
 
-        // unsupported and missing files are refused
+        // listed types are accepted; SVG and other types are refused, and so are missing files
         fs::write(plain.join("p.png"), "x").unwrap();
-        assert!(resolve_entry(&plain.join("p.png")).unwrap_err().contains("Markdown or HTML"));
+        assert_eq!(resolve_entry(&plain.join("p.png")).unwrap().rel, "p.png");
+        fs::write(plain.join("p.svg"), "x").unwrap();
+        assert!(resolve_entry(&plain.join("p.svg")).unwrap_err().contains("not a Markdown"));
         assert!(resolve_entry(&plain).unwrap_err().contains("not a file"));
         assert!(resolve_entry(&plain.join("missing.md")).is_err());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// UT-30: every type the viewer lists is accepted as a file argument; other types are refused.
+    #[test]
+    fn ut_30_file_argument_accepts_the_listed_types_only() {
+        let base = std::env::temp_dir().join(format!("docs-browser-ut30-{}", std::process::id()));
+        let plain = base.join("plain");
+        fs::create_dir_all(&plain).unwrap();
+        for name in ["a.md", "a.markdown", "a.html", "a.htm", "a.png", "a.jpg", "a.jpeg", "a.gif", "a.webp", "a.avif", "a.pdf", "a.json", "a.yaml", "a.yml"] {
+            fs::write(plain.join(name), "x").unwrap();
+            assert!(resolve_entry(&plain.join(name)).is_ok(), "{name} is accepted");
+        }
+        for name in ["a.svg", "a.txt", "a.env", "a.js", "a"] {
+            fs::write(plain.join(name), "x").unwrap();
+            assert!(resolve_entry(&plain.join(name)).is_err(), "{name} is refused");
+        }
         let _ = fs::remove_dir_all(&base);
     }
 

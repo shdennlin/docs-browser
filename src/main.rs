@@ -117,11 +117,16 @@ async fn run() -> Result<(), Failure> {
         })?
         .with_ignored(cli.ignore.clone());
     let root = resolver.root().to_path_buf();
-    // The file must be servable under the same rules as `/files/*` (hidden files need --include-hidden).
-    // HTML entries load through `/files/*`, so the check uses that endpoint's extension whitelist.
+    // The file must be servable under the rules of the endpoint the viewer uses for it: `/api/file` for JSON
+    // and YAML previews, `/files/*` for the rest (hidden files need --include-hidden).
     let file_rel = match &file_entry {
         Some(e) => {
-            if let Err(d) = resolver.resolve(&e.rel, Endpoint::Files) {
+            let endpoint = if docs_browser::resolve::has_extension(std::path::Path::new(&e.rel), docs_browser::resolve::PREVIEW_TEXT_EXTENSIONS) {
+                Endpoint::ApiText
+            } else {
+                Endpoint::Files
+            };
+            if let Err(d) = resolver.resolve(&e.rel, endpoint) {
                 return Err(Failure { code: 2, message: format!("cannot open file: {}: {}", shown(&cli.directory), d.reason()) });
             }
             Some(e.rel.clone())
