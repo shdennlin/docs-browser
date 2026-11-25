@@ -260,8 +260,11 @@
         details.dataset.dir = dirPath;
         if (state.expanded.has(dirPath)) details.open = true;
         details.addEventListener('toggle', function () {
+          // Rendering opens the folders already in state.expanded, and each open fires a toggle event.
+          // Those echoes change nothing, so they are skipped and do not trigger a save.
+          if (details.open === state.expanded.has(dirPath)) return;
           if (details.open) state.expanded.add(dirPath); else state.expanded.delete(dirPath);
-          saveExpanded();
+          scheduleSaveExpanded();
         });
         var summary = document.createElement('summary');
         var nameSpan = document.createElement('span');
@@ -356,6 +359,19 @@
     if (!key || !state.expandedReady) return;
     try { localStorage.setItem(key, JSON.stringify(Array.from(state.expanded))); } catch (e) { /* storage may be off */ }
   }
+  // Clicks in quick succession share one write: the set is serialised once, after the last click.
+  var expandedTimer = 0;
+  function scheduleSaveExpanded() {
+    clearTimeout(expandedTimer);
+    expandedTimer = setTimeout(saveExpanded, 250);
+  }
+  // A reload or a close within the 250 ms window still keeps the last change.
+  window.addEventListener('pagehide', function () {
+    if (!expandedTimer) return;
+    clearTimeout(expandedTimer);
+    expandedTimer = 0;
+    saveExpanded();
+  });
   function forgetExpanded() {
     try {
       Object.keys(localStorage).filter(function (k) { return k.indexOf(EXPANDED_PREFIX) === 0; })

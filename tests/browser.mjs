@@ -1174,7 +1174,7 @@ checks['AC-92'] = async (cdp) => {
     await q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.expanded.') === 0).forEach(k => localStorage.removeItem(k)); true");
     await p.goto('/'); await p.ready();
     await q("(function () { var d = document.querySelector('details[data-dir=\"docs\"]'); d.open = true; return true; })()");
-    await waitFor(async () => (await expandedKeys()).length >= 1, 3000, 50);
+    await waitFor(() => q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.expanded.') === 0).map(k => localStorage.getItem(k)).join('').indexOf('\"docs\"') !== -1"), 3000, 50);
     // reload: the folder opens again without a click
     await p.goto('/'); await p.ready();
     r.afterReload = await openDirs();
