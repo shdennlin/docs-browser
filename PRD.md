@@ -329,6 +329,7 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 
 - **Outline:** for a Markdown file with headings, a small `☰` button floats at the top right. Hovering it shows the heading list (indented by level, in the same colours as the headings in dark mode; the section being read is highlighted with a background and bold text, without a coloured side border); clicking a heading scrolls to it and sets the `#hash`. Contents links inside a document (`[x](#some-heading)`) jump the same way: the link is matched to a heading id exactly, or, failing that, ignoring the invisible emoji selectors (U+FE0E, U+FE0F), the joiner (U+200D) and leading hyphens, because headings such as `🛡️ Title` keep those characters in their id while many tools leave them out of the link. A contents link whose heading does not exist (an out-of-date table of contents) is shown grey and struck through, with the tooltip `找不到這個標題`, and a click does nothing (the address bar is left alone). Clicking the button pins the list open or closed again (remembered). Files without headings and HTML files show no outline.
 - **Copy file name:** while a file is open, a `❐` button at the top right, left of the outline button, copies the file name (the last part of the path, for example `rel.md`) to the clipboard and shows `✓` for about a second. It is also there for HTML pages and absent when no file is open.
+- **Copy code:** every code block (not Mermaid) has a small `Copy` button at its top right. It copies the block's text without the button's label and shows `✓` for about a second; a failed copy shows `!`. Diagrams and files without code blocks have none (AC-90).
 - **HTML pages** fill the whole right panel: no padding, border or rounded corners.
 - **Settings:** the `⚙` button in the bar at the bottom of the file list opens a dialog with: wrap long names, keep the outline open, use the full width for Markdown, and `Reset to defaults` (also resets the sidebar width). The dialog closes with `×`, `Esc` or a click outside. Everything is stored in `localStorage` of the browser only. The theme is switched with its own button (§6 Theme), not in this dialog; `Reset to defaults` also returns the theme to the system setting.
 
@@ -853,6 +854,7 @@ site/
 | AC-69 | M5 | §9.1 bind errors | macOS: `docs-browser . --port 80` as an unprivileged user. Linux: the same inside a container started with `--user 1000 --sysctl net.ipv4.ip_unprivileged_port_start=1024` (without the sysctl, Docker allows the bind, measured) | `error: cannot bind ...`; exit `1` |
 | AC-88 | M5 | §9.1 default port fallback | Hold `127.0.0.1:4747` with a listener; run `docs-browser tests/fixtures/site` (no `--port`); then `docs-browser tests/fixtures/site --port 4747` | The startup line shows a port from 4748 to 4766 that answers `200`; stderr has `note: port 4747 is busy, using`; the explicit busy port exits `1` with `error: cannot bind 127.0.0.1:4747` |
 | AC-89 | M5 | §9.1 file argument | Make a folder `repo/.git`, `repo/sub dir/中文 note.md`, `repo/.secret.md` and a folder `plain/` with `p.md` and `p.png`. Run `docs-browser repo/sub dir/中文 note.md --port 0`; `docs-browser plain/p.md --port 0`; `docs-browser plain/p.png`; `docs-browser repo/.secret.md` | Repo case: the `Serving` line shows `repo`, the `Opening` line has `?file=sub%20dir/%E4%B8%AD%E6%96%87%20note.md`, `/api/file` for that path answers `200`, `/api/tree` lists `sub dir`. Plain case: the root is `plain` and the URL has `?file=p.md`. `p.png` exits `2` with `not a Markdown or HTML file`; the hidden file exits `2` with `cannot open file` |
+| AC-90 | M3 | §7.4 code copy | Browser `/?file=docs/code.md`: click the `Copy` button of the first code block; then `/?file=docs/palette.md` | Each code block has one button and the mermaid diagrams have none; after the click the button shows `✓` and the block's code text is unchanged |
 
 ### 13.5 Unit tests
 
@@ -908,6 +910,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.4 full-screen diagram | AC-85 |
 | §7.3, §11 version display | AC-86 |
 | §7.3, §11 file information | AC-87, UT-19, UT-20, UT-21 |
+| §7.4 code copy | AC-90 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
 | §8 live reload | AC-43 to AC-48, AC-50 to AC-57, UT-12 to UT-16 |

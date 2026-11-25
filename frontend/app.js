@@ -455,6 +455,24 @@
     block.appendChild(b);
   }
 
+  // Copy button on every code block (PRD 7.4): copies the block's text, shows a tick for a moment.
+  function addCodeCopy(root) {
+    Array.prototype.forEach.call(root.querySelectorAll('pre'), function (pre) {
+      if (pre.closest('.mermaid, .mermaid-block') || pre.querySelector('.code-copy')) return;
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'code-copy';
+      b.textContent = 'Copy'; b.title = 'Copy code'; b.setAttribute('aria-label', 'Copy code');
+      b.addEventListener('click', function () {
+        var code = pre.querySelector('code') || pre;
+        copyText(code.textContent).then(function () {
+          b.textContent = '\u2713'; b.classList.add('copied');
+          setTimeout(function () { b.textContent = 'Copy'; b.classList.remove('copied'); }, 1200);
+        }, function () { b.textContent = '!'; setTimeout(function () { b.textContent = 'Copy'; }, 1200); });
+      });
+      pre.appendChild(b);
+    });
+  }
+
   async function renderMermaid(root, token) {
     var blocks = root.querySelectorAll('.mermaid-block');
     var n = 0;
@@ -505,6 +523,7 @@
       slugger: L.makeSlugger(),
     });
     markDeadLinks();
+    addCodeCopy(els.preview);
     await renderMermaid(els.preview, token);
     await waitForImages(els.preview, 3000);
     if (token !== state.token) return;

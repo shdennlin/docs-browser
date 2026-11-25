@@ -1162,6 +1162,27 @@ checks['AC-87'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-90: every code block has a copy button; it copies the code and not the button's text
+checks['AC-90'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/?file=docs/code.md'); await p.ready();
+    await waitFor(() => p.ev("document.querySelectorAll('#preview pre .code-copy').length >= 1"), 5000, 50);
+    const before = await q("(function(){var pre=document.querySelector('#preview pre');return {n:document.querySelectorAll('#preview pre .code-copy').length,code:(pre.querySelector('code')||pre).textContent}})()");
+    await q("window.__copied = []; Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied.push(t); return Promise.resolve(); } }, configurable: true }); true");
+    await q("document.querySelector('#preview pre .code-copy').click()");
+    await waitFor(() => p.ev("document.querySelector('#preview pre .code-copy').classList.contains('copied')"), 3000, 50);
+    const after = await q("(function(){var pre=document.querySelector('#preview pre');return {code:(pre.querySelector('code')||pre).textContent,label:document.querySelector('#preview pre .code-copy').textContent,sent:window.__copied[0]||null}})()");
+    await p.goto('/?file=docs/palette.md'); await p.ready();
+    await waitFor(() => p.ev("document.querySelectorAll('#preview .mermaid svg').length >= 2"), 10000, 100);
+    const onDiagrams = await q("document.querySelectorAll('#preview .mermaid .code-copy').length");
+    const r = { buttons: before.n, codeKept: before.code === after.code, copied: after.label, sentIsCode: after.sent === before.code, onDiagrams };
+    const ok = before.n >= 1 && r.codeKept && after.label === '\u2713' && r.sentIsCode && onDiagrams === 0;
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
 // ---- AC-81: in-page tabs
 checks['AC-81'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=README.md');
