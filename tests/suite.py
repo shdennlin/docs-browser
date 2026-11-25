@@ -952,6 +952,42 @@ def ac_89(ctx):
                 f"png exit={png[0]}; hidden exit={hidden[0]}")
 
 
+@ac("AC-91")
+def ac_91(ctx):
+    """--ignore NAME (repeatable) hides that exact name at any depth; built-in names stay hidden."""
+    base = tempfile.mkdtemp(prefix="docs-browser-ac91-")
+    try:
+        for rel in ["drafts/a.md", "docs/drafts/b.md", "docs/drafts-old/c.md", "docs/keep.md",
+                    "node_modules/x.md", "private/p.md"]:
+            path = os.path.join(base, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write("# x\n")
+        pr = Proc(ctx, [base, "--port", "0", "--ignore", "drafts", "--ignore", "private"])
+        try:
+            pr.wait_for_stderr("Serving")
+            m = re.search(r"http://127\.0\.0\.1:(\d+)", pr.stderr())
+            port = int(m.group(1)) if m else 0
+            tree = get(port, "/api/tree")[2].decode("utf-8", "replace") if port else ""
+            nested = get(port, "/api/file?path=docs/drafts/b.md")[0] if port else None
+            top = get(port, "/api/file?path=drafts/a.md")[0] if port else None
+            kept = get(port, "/api/file?path=docs/keep.md")[0] if port else None
+            private = get(port, "/api/file?path=private/p.md")[0] if port else None
+            lookalike = '"name":"drafts-old"' in tree
+            builtin_hidden = '"name":"node_modules"' not in tree
+        finally:
+            pr.stop()
+        bad = run_cli(ctx, [base, "--ignore", "a/b"])
+        empty = run_cli(ctx, [base, "--ignore", ""])
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+    ok = (top == 404 and nested == 404 and private == 404 and kept == 200 and lookalike and builtin_hidden
+          and bad[0] == 2 and empty[0] == 2)
+    return ok, (f"top drafts={top}; nested drafts={nested}; private={private}; keep={kept}; "
+                f"drafts-old listed={lookalike}; node_modules hidden={builtin_hidden}; "
+                f"slash exit={bad[0]}; empty exit={empty[0]}")
+
+
 @ac("AC-61")
 def ac_61(ctx):
     with Server(ctx["bin"], FIXTURE_SITE, 4110):

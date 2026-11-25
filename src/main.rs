@@ -36,9 +36,20 @@ struct Cli {
     /// Make dot-prefixed files and folders visible and readable
     #[arg(long)]
     include_hidden: bool,
+    /// Hide every file or folder with this exact name at any depth (repeatable; adds to the built-in list)
+    #[arg(long = "ignore", value_name = "NAME", value_parser = parse_ignore_name)]
+    ignore: Vec<String>,
     /// Log every request to stderr
     #[arg(long, short = 'v')]
     verbose: bool,
+}
+
+/// One `--ignore` name: a single path component, so it cannot point outside the names it hides.
+fn parse_ignore_name(value: &str) -> Result<String, String> {
+    if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\', '\0']) {
+        return Err("must be one file or folder name, without / or \\".to_string());
+    }
+    Ok(value.to_string())
 }
 
 /// A path for a message: control characters are escaped, so a directory name cannot forge log lines.
@@ -99,10 +110,12 @@ async fn run() -> Result<(), Failure> {
     if let Err(e) = std::fs::read_dir(&dir) {
         return Err(Failure { code: 2, message: format!("cannot read directory: {}: {e}", shown(&dir)) });
     }
-    let resolver = Resolver::new(&dir, cli.include_hidden).map_err(|e| Failure {
-        code: 2,
-        message: format!("cannot use directory: {}: {e}", shown(&dir)),
-    })?;
+    let resolver = Resolver::new(&dir, cli.include_hidden)
+        .map_err(|e| Failure {
+            code: 2,
+            message: format!("cannot use directory: {}: {e}", shown(&dir)),
+        })?
+        .with_ignored(cli.ignore.clone());
     let root = resolver.root().to_path_buf();
     // The file must be servable under the same rules as `/files/*` (hidden files need --include-hidden).
     // HTML entries load through `/files/*`, so the check uses that endpoint's extension whitelist.
@@ -157,7 +170,8 @@ async fn run() -> Result<(), Failure> {
 
     // Live reload: if the OS watcher cannot start, the server keeps serving (PRD 8.5).
     let include_hidden = state.resolver.include_hidden();
-    let live = watch::init_live(&state, &root, |r, tx| watch::start_watcher(r, include_hidden, tx));
+    let ignored = state.resolver.ignored().to_vec();
+    let live = watch::init_live(&state, &root, |r, tx| watch::start_watcher(r, include_hidden, ignored, tx));
     let _watcher_guard = live.map(|(handle, rx)| {
         let pipeline = Arc::new(watch::Pipeline::new(state.clone()));
         tokio::spawn(watch::run(pipeline.clone(), rx));

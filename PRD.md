@@ -49,6 +49,7 @@
 | v1.4.39 (2026-11-25) | Release 0.3.0: includes v1.4.34 to v1.4.38 (dark Mermaid accents, full-screen Mermaid viewer, version in the footer, file information bar). Security: `GET /api/info` no longer runs `git status`, which executes a repository's configured clean filters; `dirty` is computed with filter-free commands (UT-21). `Cargo.toml` and the README install tag updated ; the Linux container suite passes all 108 rows |
 | v1.4.40 (2026-11-25) | `--open` is the default (`--no-open` turns it off); without `--port`, a busy 4747 moves to the next free port from 4748 to 4766 with a note, an explicit busy port is still an error (9, 9.1; AC-64, AC-88, UT-22); the tests pass `--no-open` |
 | v1.4.41 (2026-11-25) | `docs-browser <file.md>` serves the nearest enclosing git repository (or the file's folder), opens that file with `?file=`, and prints the root and the URL (9, 9.1; AC-60, AC-89, UT-23, UT-24) |
+| v1.4.43 (2026-11-25) | `--ignore NAME` (repeatable) hides exact names at any depth and only adds to the built-in list (9.1, 7.1; AC-91, UT-25); an HTML file argument is accepted, because the startup check uses the `/files/*` whitelist; code-copy button on code blocks (7.4; AC-90); §14 and D3/D4 record the decisions not taken |
 | v1.4.42 (2026-11-25) | Release 0.4.0: includes v1.4.40 (browser opens by default, `--no-open`; a busy default port moves to the next free one) and v1.4.41 (a file argument serves its git repository and opens the file) on top of 0.3.0; `Cargo.toml`, `Cargo.lock` and the README install tag updated |
 
 Review basis: two `/reviewer:spec` rounds (logs under `.claude/reviewer/runs/`, not versioned with this file). Findings are not cited by ID in this document.
@@ -290,7 +291,7 @@ The sidebar:
 
 **Visibility.** A relative path is *visible* when none of its components is a dot-prefixed name and none equals, **compared case-insensitively**, one of the ignore-list names `.git`, `node_modules`, `dist`, `build`, `.cache`.
 
-- `--include-hidden` makes dot-prefixed components acceptable. The five ignore-list names are **always** excluded, even with `--include-hidden`; there is no override in the MVP.
+- `--include-hidden` makes dot-prefixed components acceptable. The five ignore-list names are **always** excluded, even with `--include-hidden`; there is no override for them. `--ignore NAME` (§9.1) adds names to this list and cannot remove any of them.
 - Visibility is evaluated on **both** the listed path and the canonical path (§12.2). A symlink named `public` that points at `.git` is therefore not visible.
 
 **Served-extension whitelist (D7).** `/files/*` serves a file only when its extension, compared case-insensitively, is one of:
@@ -417,7 +418,7 @@ docs-browser [directory]
 
 `directory` defaults to `.`.
 
-Options: `<path>` is a directory (default `.`) or a Markdown/HTML file (see 9.1), `--port <N>` (default 4747, see 9.1), `--host <ADDR>` (default `127.0.0.1`), `--no-open`, `--include-hidden`, `--verbose` (alias `-v`), `--help`, `--version`. `--open` is still accepted (hidden) for earlier scripts.
+Options: `<path>` is a directory (default `.`) or a Markdown/HTML file (see 9.1), `--port <N>` (default 4747, see 9.1), `--host <ADDR>` (default `127.0.0.1`), `--no-open`, `--include-hidden`, `--ignore <NAME>` (repeatable), `--verbose` (alias `-v`), `--help`, `--version`. `--open` is still accepted (hidden) for earlier scripts.
 
 ### 9.1 Startup and exit behaviour
 
@@ -430,6 +431,7 @@ Options: `<path>` is a directory (default `.`) or a Markdown/HTML file (see 9.1)
 - A file argument (`.md`, `.markdown`, `.html`, `.htm`): the served root is the nearest enclosing git repository, found by walking up from the file's folder to the first `.git` (a folder or a file, as in a worktree); without one, the file's own folder. No `git` command runs for this. The page opens that file with `?file=<path relative to the root>`, and the line `Opening <url>` is printed. Other file types exit `2` with `error: not a Markdown or HTML file: <path>`; a file that the viewer would refuse (for example a hidden file without `--include-hidden`) exits `2` with `error: cannot open file: <path>: <reason>`. The `Serving` line shows the real root.
 - Opening the printed URL in the default browser is the default. `--no-open` turns it off. With a wildcard host (`0.0.0.0`) it opens `http://127.0.0.1:<port>/`. If opening fails (for example on a headless host), print `warning: could not open a browser for <url>: <reason>` and continue.
 - No configuration file is read.
+- `--ignore <NAME>` (repeatable) hides every file or folder whose name equals NAME exactly, at any depth, in the tree, `/files/*`, `/api/file` and live reload. It adds to the five built-in names (§7.1) and never removes one. A NAME that is empty, contains `/` or `\`, or is `.` or `..` exits `2`. Unlike the built-in names, matching is case-sensitive.
 - SIGINT or SIGTERM: close SSE streams (§8.3) and exit **0** within 2 s.
 
 ### 9.2 Non-loopback host: warn only (D2)
@@ -854,6 +856,7 @@ site/
 | AC-69 | M5 | §9.1 bind errors | macOS: `docs-browser . --port 80` as an unprivileged user. Linux: the same inside a container started with `--user 1000 --sysctl net.ipv4.ip_unprivileged_port_start=1024` (without the sysctl, Docker allows the bind, measured) | `error: cannot bind ...`; exit `1` |
 | AC-88 | M5 | §9.1 default port fallback | Hold `127.0.0.1:4747` with a listener; run `docs-browser tests/fixtures/site` (no `--port`); then `docs-browser tests/fixtures/site --port 4747` | The startup line shows a port from 4748 to 4766 that answers `200`; stderr has `note: port 4747 is busy, using`; the explicit busy port exits `1` with `error: cannot bind 127.0.0.1:4747` |
 | AC-89 | M5 | §9.1 file argument | Make a folder `repo/.git`, `repo/sub dir/中文 note.md`, `repo/.secret.md` and a folder `plain/` with `p.md` and `p.png`. Run `docs-browser repo/sub dir/中文 note.md --port 0`; `docs-browser plain/p.md --port 0`; `docs-browser plain/p.png`; `docs-browser repo/.secret.md` | Repo case: the `Serving` line shows `repo`, the `Opening` line has `?file=sub%20dir/%E4%B8%AD%E6%96%87%20note.md`, `/api/file` for that path answers `200`, `/api/tree` lists `sub dir`. Plain case: the root is `plain` and the URL has `?file=p.md`. `p.png` exits `2` with `not a Markdown or HTML file`; the hidden file exits `2` with `cannot open file` |
+| AC-91 | M5 | §9.1 `--ignore` | `docs-browser base --port 0 --ignore drafts --ignore private`, where `base` holds `drafts/a.md`, `docs/drafts/b.md`, `docs/drafts-old/c.md`, `docs/keep.md`, `private/p.md`, `node_modules/x.md`; then `docs-browser base --ignore a/b` and `docs-browser base --ignore ""` | `/api/file` for `drafts/a.md`, `docs/drafts/b.md` and `private/p.md` answers `404`; `docs/keep.md` answers `200`; `/api/tree` lists `drafts-old` and not `node_modules`; the two invalid names exit `2` |
 | AC-90 | M3 | §7.4 code copy | Browser `/?file=docs/code.md`: click the `Copy` button of the first code block; then `/?file=docs/palette.md` | Each code block has one button and the mermaid diagrams have none; after the click the button shows `✓` and the block's code text is unchanged |
 
 ### 13.5 Unit tests
@@ -884,6 +887,7 @@ site/
 | UT-22 | M5 | §9.1 default port fallback | Busy start port: the bind moves to the next free port in range; all tries busy: an OS-chosen port is used |
 | UT-23 | M5 | §9.1 file argument root | The root is the nearest `.git` above the file (a folder or a `.git` file); none: the file's folder; unsupported and missing files are refused |
 | UT-24 | M5 | §9.1 file URL | `?file=` value is percent-encoded per byte with `/` kept; the base URL is kept |
+| UT-25 | M5 | §9.1 `--ignore` | A listed name hides that exact component at any depth; a longer name, a substring or another case stays visible; the built-in five stay hidden; a request for a hidden path is `NotVisible` |
 
 Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
 
@@ -926,19 +930,18 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 ## 14. Future Features
 
 - Windows support (UNC and `\\?\` canonical prefixes, case rules)
-- Opt-in flag to relax HTML isolation (e.g. CORS on `/files/*`) for pages that need `fetch()` of local files
-- Opt-in for Markdown raw HTML, with sanitization
-- Override for the ignore list
+- Opt-in flag to relax HTML isolation (e.g. CORS on `/files/*`) for pages that need `fetch()` of local files: not adopted; revisit only with a concrete need
+- Opt-in for Markdown raw HTML, with sanitization: deferred
+- Remove names from the built-in ignore list: not adopted (D1 is fixed; `--ignore` only adds)
 - Polling fallback when the OS watcher is unavailable
 - Browser automation for all browser checks in §13
 - Table of contents
-- Copy code button
 - Image / PDF preview
 - JSON / YAML preview
 - Remember expanded folders across sessions
 - Keyboard navigation
 - Open file in VS Code
-- Config file such as `.docs-browser.json`
+- Config file such as `.docs-browser.json`: not adopted; revisit only with a concrete need
 - Prebuilt cross-platform release binaries
 
 ## 15. Decisions and Open Questions
@@ -949,8 +952,8 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 |---|---|
 | D1 | Hidden (dot-prefixed) and ignored paths are not readable by default. `--include-hidden` opens dot-prefixed paths only; `.git`, `node_modules`, `dist`, `build`, `.cache` are always excluded |
 | D2 | A non-loopback `--host` produces a warning only; it is not refused |
-| D3 | Markdown raw HTML is off, with no opt-in flag in the MVP |
-| D4 | HTML previews cannot `fetch()` local files (opaque origin); no opt-in flag in the MVP |
+| D3 | Markdown raw HTML is off, with no opt-in flag in the MVP. Not adopted; revisit only with a concrete need |
+| D4 | HTML previews cannot `fetch()` local files (opaque origin); no opt-in flag in the MVP. Not adopted; revisit only with a concrete need |
 | D5 | Markdown links that resolve outside the root, or to non-visible or non-whitelisted files, render as plain text |
 | D6 | A sub-hash on an HTML deep link is ignored |
 | D7 | `/files/*` serves only the extension whitelist in §7.1; everything else is 404 |

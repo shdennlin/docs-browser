@@ -68,7 +68,7 @@ pub fn classify(resolver: &Resolver, tree: &TreeState, paths: &HashSet<PathBuf>)
         let Ok(rel) = abs.strip_prefix(root) else {
             continue; // outside the root
         };
-        if !visible(rel, resolver.include_hidden()) {
+        if !visible(rel, resolver.include_hidden(), resolver.ignored()) {
             continue;
         }
         let rel_s = rel_to_string(rel);
@@ -241,12 +241,17 @@ pub fn relevance(event: &Event) -> Relevance {
 }
 
 /// Keeps only paths inside the root that are visible (PRD 7.1).
-pub fn visible_paths(root: &Path, include_hidden: bool, paths: Vec<PathBuf>) -> HashSet<PathBuf> {
+pub fn visible_paths(
+    root: &Path,
+    include_hidden: bool,
+    ignored: &[String],
+    paths: Vec<PathBuf>,
+) -> HashSet<PathBuf> {
     paths
         .into_iter()
         .filter(|p| {
             p.strip_prefix(root)
-                .map(|rel| rel.as_os_str().is_empty() || visible(rel, include_hidden))
+                .map(|rel| rel.as_os_str().is_empty() || visible(rel, include_hidden, ignored))
                 .unwrap_or(false)
         })
         .collect()
@@ -257,6 +262,7 @@ pub fn visible_paths(root: &Path, include_hidden: bool, paths: Vec<PathBuf>) -> 
 pub fn start_watcher(
     root: &Path,
     include_hidden: bool,
+    ignored: Vec<String>,
     tx: mpsc::UnboundedSender<Batch>,
 ) -> Result<WatcherHandle, String> {
     let root_owned = root.to_path_buf();
@@ -265,7 +271,7 @@ pub fn start_watcher(
             Relevance::Touched => {
                 // The OS still reports events from ignored directories (PRD 8.1); drop them here so a
                 // storm in node_modules or .git never queues anything.
-                let paths = visible_paths(&root_owned, include_hidden, event.paths);
+                let paths = visible_paths(&root_owned, include_hidden, &ignored, event.paths);
                 if !paths.is_empty() {
                     let _ = tx.send(Batch { paths, rescan: false });
                 }
@@ -435,10 +441,10 @@ mod tests {
             root.join(".hidden/h.md"),
             PathBuf::from("/elsewhere/x.md"),
         ];
-        let kept = visible_paths(&root, false, paths.clone());
+        let kept = visible_paths(&root, false, &[], paths.clone());
         assert_eq!(kept, set(&[root.join("docs/a.md")]));
         // include_hidden opens dot folders, but never the ignore list.
-        let kept = visible_paths(&root, true, paths);
+        let kept = visible_paths(&root, true, &[], paths);
         assert_eq!(kept, set(&[root.join("docs/a.md"), root.join(".hidden/h.md")]));
     }
 

@@ -126,6 +126,7 @@ impl Scanner<'_> {
         names.sort_by(|a, b| a.0.cmp(&b.0));
 
         let include_hidden = self.resolver.include_hidden();
+        let ignored = self.resolver.ignored();
         let root = self.resolver.root().to_path_buf();
         let mut out: Vec<TreeEntry> = Vec::new();
 
@@ -138,7 +139,7 @@ impl Scanner<'_> {
             } else {
                 format!("{listed_prefix}/{name}")
             };
-            if !visible(Path::new(&listed), include_hidden) {
+            if !visible(Path::new(&listed), include_hidden, ignored) {
                 continue;
             }
 
@@ -150,7 +151,7 @@ impl Scanner<'_> {
                 let Ok(rel) = target.strip_prefix(&root) else {
                     continue; // outside the root
                 };
-                if !visible(rel, include_hidden) {
+                if !visible(rel, include_hidden, ignored) {
                     continue;
                 }
                 let Ok(meta) = fs::metadata(&target) else {

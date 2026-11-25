@@ -42,6 +42,7 @@ docs-browser [OPTIONS] [DIRECTORY]
   --host <HOST>      address to bind: an IP address or localhost [default: 127.0.0.1]
   --no-open          do not open the page in the default browser (it opens by default)
   --include-hidden   make dot-prefixed files and folders visible and readable
+  --ignore <NAME>    hide every file or folder with this exact name, at any depth (repeatable; adds to the built-in list: .git, node_modules, dist, build, .cache)
   -v, --verbose      log every request to stderr
   -h, --help         print help
   -V, --version      print the version

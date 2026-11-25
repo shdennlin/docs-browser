@@ -77,6 +77,9 @@ pub struct Resolved {
 pub struct Resolver {
     root: PathBuf,
     include_hidden: bool,
+    /// Extra names from `--ignore`, matched exactly against any path component. Added to
+    /// `IGNORED_NAMES`; never removes anything from it.
+    ignored: Vec<String>,
 }
 
 /// Lower-cased extension of `path`, if it has a UTF-8 one.
@@ -91,16 +94,16 @@ pub fn has_extension(path: &Path, allowed: &[&str]) -> bool {
 }
 
 /// Visibility rule of PRD 7.1: no dot-prefixed component (unless `include_hidden`) and no
-/// component equal, case-insensitively, to an ignored name. Names that are not valid UTF-8
-/// are never visible.
-pub fn visible(rel: &Path, include_hidden: bool) -> bool {
+/// component equal, case-insensitively, to an ignored name, or exactly to a name given with
+/// `--ignore`. Names that are not valid UTF-8 are never visible.
+pub fn visible(rel: &Path, include_hidden: bool, ignored: &[String]) -> bool {
     for component in rel.components() {
         if let Component::Normal(name) = component {
             let Some(name) = name.to_str() else {
                 return false;
             };
             let lower = name.to_ascii_lowercase();
-            if IGNORED_NAMES.contains(&lower.as_str()) {
+            if IGNORED_NAMES.contains(&lower.as_str()) || ignored.iter().any(|n| n == name) {
                 return false;
             }
             if name.starts_with('.') && !include_hidden {
@@ -134,7 +137,14 @@ impl Resolver {
         Ok(Resolver {
             root,
             include_hidden,
+            ignored: Vec::new(),
         })
+    }
+
+    /// Adds `--ignore` names. The caller validates them (one path component, no separators).
+    pub fn with_ignored(mut self, names: Vec<String>) -> Self {
+        self.ignored = names;
+        self
     }
 
     pub fn root(&self) -> &Path {
@@ -143,6 +153,10 @@ impl Resolver {
 
     pub fn include_hidden(&self) -> bool {
         self.include_hidden
+    }
+
+    pub fn ignored(&self) -> &[String] {
+        &self.ignored
     }
 
     /// Resolves a request path (already decoded once by the HTTP layer) to a readable file.
@@ -185,8 +199,8 @@ impl Resolver {
         };
 
         // Step 6: both the listed and the canonical path must be visible.
-        if !visible(&listed, self.include_hidden)
-            || !visible(&canonical_rel_path, self.include_hidden)
+        if !visible(&listed, self.include_hidden, &self.ignored)
+            || !visible(&canonical_rel_path, self.include_hidden, &self.ignored)
         {
             return Err(Denied::NotVisible);
         }
@@ -315,23 +329,49 @@ mod tests {
     }
 
     #[test]
+    fn ut_25_ignore_names_match_exactly_at_any_depth_and_never_remove_defaults() {
+        let extra = vec!["drafts".to_string()];
+        // A listed name hides that component at any depth.
+        assert!(!visible(&Path::new("drafts/a.md"), false, &extra));
+        assert!(!visible(&Path::new("docs/drafts/a.md"), false, &extra));
+        // Exact match only: a longer name, a substring or another case is not hidden.
+        assert!(visible(&Path::new("docs/drafts-old/a.md"), false, &extra));
+        assert!(visible(&Path::new("docs/my-drafts/a.md"), false, &extra));
+        assert!(visible(&Path::new("Drafts/a.md"), false, &extra));
+        // Names only ever add: the built-in list still applies with any `--ignore` list.
+        for builtin in ["node_modules/x.md", "docs/.git/x", "docs/build/x.md", "dist/x.md", "docs/.cache/x.md"] {
+            assert!(!visible(&Path::new(builtin), true, &extra), "{builtin} stays hidden");
+        }
+        // The file-level resolver applies the same rule to requests.
+        let outer = TestDir::new("ut25");
+        outer.write("drafts/a.md", "# a");
+        outer.write("docs/drafts/b.md", "# b");
+        outer.write("docs/keep.md", "# k");
+        let r = Resolver::new(&outer.path, false).unwrap().with_ignored(extra.clone());
+        assert_eq!(r.resolve("drafts/a.md", Endpoint::Files), Err(Denied::NotVisible));
+        assert_eq!(r.resolve("docs/drafts/b.md", Endpoint::ApiFile), Err(Denied::NotVisible));
+        assert!(r.resolve("docs/keep.md", Endpoint::ApiFile).is_ok());
+        assert_eq!(r.ignored(), extra.as_slice());
+    }
+
+    #[test]
     fn ut_04_visible_rules_case_and_include_hidden() {
         let p = |s: &str| PathBuf::from(s);
         // Ordinary and nested paths are visible.
-        assert!(visible(&p("docs/a.md"), false));
+        assert!(visible(&p("docs/a.md"), false, &[]));
         // Dot names are hidden by default, visible with include_hidden.
-        assert!(!visible(&p(".hidden/a.md"), false));
-        assert!(visible(&p(".hidden/a.md"), true));
+        assert!(!visible(&p(".hidden/a.md"), false, &[]));
+        assert!(visible(&p(".hidden/a.md"), true, &[]));
         // Ignored names are excluded in both modes, in any letter case.
         for name in ["node_modules", "Node_Modules", "NODE_MODULES", ".git", ".GIT", ".Git", "dist", "Build", ".CACHE"] {
             let path = p(&format!("{name}/x.md"));
-            assert!(!visible(&path, false), "{name} default");
-            assert!(!visible(&path, true), "{name} include_hidden");
+            assert!(!visible(&path, false, &[]), "{name} default");
+            assert!(!visible(&path, true, &[]), "{name} include_hidden");
         }
         // Ignored names as an inner component, and as part of a longer name (which is fine).
-        assert!(!visible(&p("docs/node_modules/x.md"), true));
-        assert!(visible(&p("docs/my_node_modules_notes/x.md"), false));
-        assert!(visible(&p("distribution/x.md"), false));
+        assert!(!visible(&p("docs/node_modules/x.md"), true, &[]));
+        assert!(visible(&p("docs/my_node_modules_notes/x.md"), false, &[]));
+        assert!(visible(&p("distribution/x.md"), false, &[]));
     }
 
     #[test]
@@ -412,7 +452,7 @@ mod tests {
 
         // A path component that is not valid UTF-8 is never visible.
         let bad = PathBuf::from(OsStr::from_bytes(b"docs/\xff\xfe.md"));
-        assert!(!visible(&bad, true));
+        assert!(!visible(&bad, true, &[]));
 
         // Permission denied: a directory without search permission.
         use std::os::unix::fs::PermissionsExt;
