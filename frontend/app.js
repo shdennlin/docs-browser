@@ -15,6 +15,8 @@
     current: null,
     token: 0,
     expanded: new Set(),
+    expandedReady: false, // true once the saved folders were restored for this page
+    rootKey: null,        // the served root's key from /api/version (keys the saved folders)
     tabs: [],      // [{ path, scroll }]
     active: -1,    // index into tabs, -1 when no file is open
     query: '',
@@ -189,6 +191,7 @@
     if (state.mode === 'names' && L.queryTokens(state.query).length) { renderFuzzy(); markSelected(false); return; }
     els.tree.appendChild(buildList(state.tree, ''));
     markSelected(false); // a re-render must not re-open a folder the user closed
+    saveExpanded();
   }
 
   var FUZZY_LIMIT = 200;
@@ -258,6 +261,7 @@
         if (state.expanded.has(dirPath)) details.open = true;
         details.addEventListener('toggle', function () {
           if (details.open) state.expanded.add(dirPath); else state.expanded.delete(dirPath);
+          saveExpanded();
         });
         var summary = document.createElement('summary');
         var nameSpan = document.createElement('span');
@@ -314,6 +318,7 @@
         if (d) d.open = true;
       });
     }
+    saveExpanded();
     var link = Array.prototype.find.call(els.tree.querySelectorAll('a[data-path]'), function (a) {
       return a.dataset.path === state.current;
     });
@@ -330,11 +335,40 @@
     }
   }
 
+  // Expanded folders are remembered per served root (the server's rootKey), so two roots, or the
+  // 4747 and 4748 fallbacks, keep separate state. Folders that no longer exist are dropped on restore.
+  function expandedKey() { return state.rootKey ? EXPANDED_PREFIX + state.rootKey : null; }
+  function restoreExpanded() {
+    var key = expandedKey();
+    if (key) {
+      try {
+        var saved = JSON.parse(localStorage.getItem(key) || '[]');
+        if (Array.isArray(saved)) {
+          var known = new Set(L.collectDirs(state.tree));
+          state.expanded = new Set(saved.filter(function (d) { return typeof d === 'string' && known.has(d); }));
+        }
+      } catch (e) { /* storage may be off or damaged: start collapsed */ }
+    }
+    state.expandedReady = true;
+  }
+  function saveExpanded() {
+    var key = expandedKey();
+    if (!key || !state.expandedReady) return;
+    try { localStorage.setItem(key, JSON.stringify(Array.from(state.expanded))); } catch (e) { /* storage may be off */ }
+  }
+  function forgetExpanded() {
+    try {
+      Object.keys(localStorage).filter(function (k) { return k.indexOf(EXPANDED_PREFIX) === 0; })
+        .forEach(function (k) { localStorage.removeItem(k); });
+    } catch (e) { /* storage may be off */ }
+  }
+
   async function loadTree() {
     var res = await fetch('/api/tree');
     if (!res.ok) throw new Error('tree request failed: ' + res.status);
     state.tree = await res.json();
     state.treePaths = L.collectPaths(state.tree);
+    if (!state.expandedReady) restoreExpanded();
     clear(els.treeBanners);
     state.truncated = res.headers.get('x-tree-truncated') === '1';
     if (state.truncated) banner('Tree truncated', els.treeBanners);
@@ -572,6 +606,15 @@
       if (token !== state.token) return;
       clear(bar);
       var now = Date.now();
+      // Only a loopback server sends absolutePath (PRD 7.3); the custom scheme opens the file in VS Code.
+      if (typeof info.absolutePath === 'string') {
+        var vs = document.createElement('a');
+        vs.className = 'fi-vscode';
+        vs.href = 'vscode://file' + L.encodePath(info.absolutePath);
+        vs.textContent = 'Open in VS Code';
+        vs.title = info.absolutePath;
+        bar.appendChild(vs);
+      }
       if (typeof info.created === 'number') infoSpan(bar, 'fi-created', 'Created ' + fmtTime(info.created), new Date(info.created).toString());
       if (typeof info.modified === 'number') infoSpan(bar, 'fi-modified', 'Modified ' + L.formatAgo(info.modified, now), new Date(info.modified).toString());
       if (info.git) {
@@ -637,6 +680,7 @@
   // ------------------------------------------------------------ tabs (PRD 7.5)
   var tabsEl = $('#tabs');
   var TABS_KEY = 'docs-browser.tabs';
+  var EXPANDED_PREFIX = 'docs-browser.expanded.';
 
   function saveTabs() {
     try { sessionStorage.setItem(TABS_KEY, JSON.stringify(state.tabs.map(function (t) { return t.path; }))); } catch (e) { /* storage may be off */ }
@@ -1086,6 +1130,9 @@
   $('#settings-reset').addEventListener('click', function () {
     [WRAP_KEY, OUTLINE_KEY, WIDE_KEY, SIDEBAR_KEY].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } });
     setWrap(true, false); setPinned(false, false); setWide(false, false); setSidebar(L.SIDEBAR_DEFAULT, false); switchTheme(null, true);
+    forgetExpanded();
+    state.expanded = new Set();
+    renderTree();
   });
 
   // ------------------------------------------------------------ search and folder buttons (PRD 7.3)
@@ -1307,7 +1354,8 @@
   });
 
   // ------------------------------------------------------------ version (PRD 7.3)
-  fetch('/api/version').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+  var versionReady = fetch('/api/version').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+    if (j && typeof j.rootKey === 'string') state.rootKey = j.rootKey;
     if (!j || typeof j.version !== 'string') return;
     var el = $('#app-version');
     el.textContent = 'v' + j.version;
@@ -1317,6 +1365,7 @@
   // ------------------------------------------------------------ start
   (async function start() {
     connectLive(); // before the first fetch: nothing that changes from here on can be missed
+    await versionReady; // the root key must be known before the saved folders are restored
     try {
       await loadTree();
     } catch (e) {

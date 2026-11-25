@@ -342,8 +342,23 @@ async fn stamp_headers(req: Request, next: Next) -> Response {
 // ------------------------------------------------------------------ handlers
 
 /// The version of the running server, shown in the page footer (PRD 7.3).
-async fn api_version() -> Response {
-    Json(serde_json::json!({ "version": env!("CARGO_PKG_VERSION") })).into_response()
+async fn api_version(State(state): State<Arc<AppState>>) -> Response {
+    Json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "rootKey": root_key(state.resolver.root()),
+    }))
+    .into_response()
+}
+
+/// A short, stable key for a served root, so the browser can keep per-root state (expanded folders)
+/// without the server revealing the absolute path. FNV-1a, 64 bits, as 16 hex digits.
+pub fn root_key(root: &std::path::Path) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in root.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
 }
 
 async fn api_tree(State(state): State<Arc<AppState>>) -> Response {
@@ -380,8 +395,17 @@ async fn api_info(
         }
     };
     let path = resolved.path.clone();
+    // The absolute path is shown only to a loopback client (it is used for the VS Code link); on a
+    // non-loopback bind it stays out of the response.
+    let absolute = state.allowed_hosts.is_some().then(|| path.display().to_string());
     match tokio::task::spawn_blocking(move || crate::info::read(&path)).await {
-        Ok(Some(info)) => Json(info).into_response(),
+        Ok(Some(info)) => {
+            let mut value = serde_json::to_value(&info).unwrap_or(serde_json::Value::Null);
+            if let (Some(abs), Some(obj)) = (absolute, value.as_object_mut()) {
+                obj.insert("absolutePath".to_string(), serde_json::Value::String(abs));
+            }
+            Json(value).into_response()
+        }
         _ => StatusCode::NOT_FOUND.into_response(),
     }
 }
@@ -628,6 +652,16 @@ mod tests {
     fn escape_log_neutralises_control_characters() {
         assert_eq!(escape_log("a\r\nb\x1b[31m"), "a\\x0d\\x0ab\\x1b[31m");
         assert_eq!(escape_log("docs/中文 筆記.md"), "docs/中文 筆記.md");
+    }
+
+    #[test]
+    fn ut_26_root_key_is_stable_per_root_and_hides_the_path() {
+        let a = root_key(std::path::Path::new("/srv/docs"));
+        assert_eq!(a, root_key(std::path::Path::new("/srv/docs")));
+        assert_ne!(a, root_key(std::path::Path::new("/srv/docs2")));
+        assert_eq!(a.len(), 16);
+        assert!(a.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert!(!a.contains("srv"));
     }
 
     #[test]

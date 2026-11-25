@@ -497,7 +497,8 @@ def ac_36(ctx):
 # ---------------------------------------------------------------- M3
 CHROME_DEFAULT = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IDS = ["AC-03b", "AC-04", "AC-05", "AC-06", "AC-07b", "AC-09", "AC-10", "AC-12b",
-               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70", "AC-71", "AC-72", "AC-73", "AC-74", "AC-75", "AC-76", "AC-77", "AC-78", "AC-79", "AC-80", "AC-81", "AC-82", "AC-83", "AC-84", "AC-85", "AC-86", "AC-87"]
+               "AC-13b", "AC-15", "AC-17", "AC-40", "AC-41", "AC-42", "AC-70", "AC-71", "AC-72", "AC-73", "AC-74", "AC-75", "AC-76", "AC-77", "AC-78", "AC-79", "AC-80", "AC-81", "AC-82", "AC-83", "AC-84", "AC-85", "AC-86", "AC-87",
+               "AC-90", "AC-92", "AC-93"]
 
 
 def run_browser(ctx, base, ids):
@@ -986,6 +987,36 @@ def ac_91(ctx):
     return ok, (f"top drafts={top}; nested drafts={nested}; private={private}; keep={kept}; "
                 f"drafts-old listed={lookalike}; node_modules hidden={builtin_hidden}; "
                 f"slash exit={bad[0]}; empty exit={empty[0]}")
+
+
+def _info_and_version(ctx, host):
+    """Starts the server on `host` (None: loopback) and returns the /api/info and /api/version bodies."""
+    args = [FIXTURE_SITE, "--port", "0"] + (["--host", host] if host else [])
+    pr = Proc(ctx, args)
+    try:
+        pr.wait_for_stderr("Serving")
+        m = re.search(r"http://[^:/\s]+:(\d+)", pr.stderr())
+        port = int(m.group(1)) if m else 0
+        info = get(port, "/api/info?path=docs/code.md")
+        ver = get(port, "/api/version")
+    finally:
+        pr.stop()
+    return info, ver
+
+
+@ac("AC-94")
+def ac_94(ctx):
+    """/api/info carries absolutePath only when bound to loopback (for the VS Code link); /api/version
+    carries a 16-hex rootKey that is the same on every bind of one root."""
+    info_lo, ver_lo = _info_and_version(ctx, None)
+    info_any, ver_any = _info_and_version(ctx, "0.0.0.0")
+    lo_abs = info_lo[0] == 200 and "absolutePath" in json.loads(info_lo[2])
+    any_abs = info_any[0] == 200 and "absolutePath" in json.loads(info_any[2])
+    key_lo = json.loads(ver_lo[2]).get("rootKey", "")
+    key_any = json.loads(ver_any[2]).get("rootKey", "")
+    key_ok = bool(re.fullmatch(r"[0-9a-f]{16}", key_lo)) and key_lo == key_any
+    ok = lo_abs and not any_abs and key_ok
+    return ok, f"loopback absolutePath={lo_abs}; 0.0.0.0 absolutePath={any_abs}; rootKey={key_lo} same={key_lo == key_any}"
 
 
 @ac("AC-61")

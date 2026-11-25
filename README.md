@@ -56,6 +56,9 @@ docs-browser [OPTIONS] [DIRECTORY]
 - `/?file=docs/architecture.md#section` opens a file directly; the address bar always shows the current file.
 - Drag the divider between the list and the preview to change the width of the list (keyboard: focus the
   divider, then Left, Right or Home; double click resets it). The width is remembered by the browser.
+- Expanded folders are remembered per served folder in the browser, so they open again on the next visit.
+- On a loopback address the file information bar has an `Open in VS Code` link (it needs VS Code's `vscode://`
+  handler). It is not shown when the server listens on another address.
 
 ## Security model
 

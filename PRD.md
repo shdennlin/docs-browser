@@ -49,6 +49,7 @@
 | v1.4.39 (2026-11-25) | Release 0.3.0: includes v1.4.34 to v1.4.38 (dark Mermaid accents, full-screen Mermaid viewer, version in the footer, file information bar). Security: `GET /api/info` no longer runs `git status`, which executes a repository's configured clean filters; `dirty` is computed with filter-free commands (UT-21). `Cargo.toml` and the README install tag updated ; the Linux container suite passes all 108 rows |
 | v1.4.40 (2026-11-25) | `--open` is the default (`--no-open` turns it off); without `--port`, a busy 4747 moves to the next free port from 4748 to 4766 with a note, an explicit busy port is still an error (9, 9.1; AC-64, AC-88, UT-22); the tests pass `--no-open` |
 | v1.4.41 (2026-11-25) | `docs-browser <file.md>` serves the nearest enclosing git repository (or the file's folder), opens that file with `?file=`, and prints the root and the URL (9, 9.1; AC-60, AC-89, UT-23, UT-24) |
+| v1.4.44 (2026-11-25) | Expanded folders are remembered per served root in `localStorage` (7.3; AC-92, UT-26); the file information bar links to the file in VS Code on loopback (7.3; AC-93, AC-94); `/api/version` returns `rootKey`; `/api/info` returns `absolutePath` on loopback only |
 | v1.4.43 (2026-11-25) | `--ignore NAME` (repeatable) hides exact names at any depth and only adds to the built-in list (9.1, 7.1; AC-91, UT-25); an HTML file argument is accepted, because the startup check uses the `/files/*` whitelist; code-copy button on code blocks (7.4; AC-90); §14 and D3/D4 record the decisions not taken |
 | v1.4.42 (2026-11-25) | Release 0.4.0: includes v1.4.40 (browser opens by default, `--no-open`; a busy default port moves to the next free one) and v1.4.41 (a file argument serves its git repository and opens the file) on top of 0.3.0; `Cargo.toml`, `Cargo.lock` and the README install tag updated |
 
@@ -316,14 +317,14 @@ The top of the file list has a search box with a `Names` / `Contents` switch ins
 
 - **Names (default):** typing searches the file paths fuzzily: the letters of each word must appear in order, in any case (`arcmd` finds `docs/architecture.md`), and every word of the query must match. The tree is replaced by a flat list of the matching files, best match first, each with its badge and its full path (folder part dimmed, matched letters marked). A plain substring beats scattered letters, a match inside the file name beats one in a folder name, a match at the start of a word beats one in the middle, gaps cost points, ties go to the shorter then the alphabetically first path. At most 200 files are listed, then a line says how many more match. With no match the list says "No file name matches"; clearing the box brings the tree back with the folders as the user had them.
 - **Contents:** typing (after 250 ms, at least two characters) calls `GET /api/search` and replaces the tree with a result list: the path, the number of matching lines and up to three lines with the hit marked and the line number. Clicking a result opens the file. The tree comes back when the switch returns to `Names`. A tree event while a content search is shown repeats the search.
-- `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click.
+- `Expand all` opens every folder, `Collapse all` closes every folder; the choice is remembered like a manual click. Every opened or closed folder is also remembered in this browser's `localStorage`, per served root (the key comes from `/api/version` as `rootKey`, a hash that never shows the path); on the next load those folders open again, and folders that no longer exist are dropped. `Reset to defaults` clears the remembered folders of every root (AC-92).
 - Each file in the list carries a badge, `MD` for Markdown and `HTML` for HTML files.
 - Each folder shows two small icon buttons on hover: the expand icon opens the folder and everything inside it, the collapse icon closes them. Clicking a button does not toggle the folder itself. The expand icon is two chevrons pointing away from each other (up and down), the collapse icon a framed box with a minus in front of a second frame; the toolbar buttons and the folder buttons use the same two icons, drawn as SVG lines in the text colour so that they follow the theme (light and dark).
 - The three list controls (the expand-all and collapse-all icons, wrap `↵`) sit on one line in the default 300 px list, left aligned.
 - The wrap button switches long names between wrapping and one line per name shown in full (the list then scrolls sideways). Selecting a file only scrolls the list vertically, never sideways. The search box and the buttons are outside the scrolling part, so they stay in place however far the list is scrolled sideways; the outer panel snaps back to 0 if a browser scrolls it. In a very narrow list (180 px) the buttons wrap onto a second line. Every file and folder has a tooltip with its full path. The folder icon buttons sit right after the folder name, not at the right edge.
 - Each folder has a small icon, closed or open.
 
-- **File information:** a thin bar under the preview (hidden while no file is open) shows `Created <date time>` and `Modified <n minutes ago>` (the tooltip is the full time) and, at the right, for a file inside a git repository: `⎇ <branch>`, `Committed <ago> · <short hash>` with the commit subject, or `Not committed yet`, and `● uncommitted changes` when the file differs from its last commit. `Created` is the file system's birth time and is left out where it is not available; it is the time the file appeared on this computer, so a freshly cloned or synced file shows that day, not the day it was written. The bar is filled again after every reload caused by a change on disk. It appears for Markdown and HTML pages alike.
+- **File information:** a thin bar under the preview (hidden while no file is open) shows `Created <date time>` and `Modified <n minutes ago>` (the tooltip is the full time) and, at the right, for a file inside a git repository: `⎇ <branch>`, `Committed <ago> · <short hash>` with the commit subject, or `Not committed yet`, and `● uncommitted changes` when the file differs from its last commit. `Created` is the file system's birth time and is left out where it is not available; it is the time the file appeared on this computer, so a freshly cloned or synced file shows that day, not the day it was written. The bar is filled again after every reload caused by a change on disk. It appears for Markdown and HTML pages alike. On a loopback bind the bar also has an `Open in VS Code` link (`vscode://file/<absolute path>`, percent-encoded per path segment); the server sends the absolute path in `/api/info` (`absolutePath`) only when bound to loopback, so a non-loopback bind shows no link (AC-93, AC-94).
 - **Version:** the bar at the bottom of the file list shows `v` and the version of the running server (for example `v0.2.0`) at its right end, in small muted text; the tooltip is `docs-browser v0.2.0`. It comes from `GET /api/version`, so after an upgrade a page left open shows the new number only once it is reloaded.
 
 ### 7.4 Outline and settings
@@ -857,6 +858,9 @@ site/
 | AC-88 | M5 | §9.1 default port fallback | Hold `127.0.0.1:4747` with a listener; run `docs-browser tests/fixtures/site` (no `--port`); then `docs-browser tests/fixtures/site --port 4747` | The startup line shows a port from 4748 to 4766 that answers `200`; stderr has `note: port 4747 is busy, using`; the explicit busy port exits `1` with `error: cannot bind 127.0.0.1:4747` |
 | AC-89 | M5 | §9.1 file argument | Make a folder `repo/.git`, `repo/sub dir/中文 note.md`, `repo/.secret.md` and a folder `plain/` with `p.md` and `p.png`. Run `docs-browser repo/sub dir/中文 note.md --port 0`; `docs-browser plain/p.md --port 0`; `docs-browser plain/p.png`; `docs-browser repo/.secret.md` | Repo case: the `Serving` line shows `repo`, the `Opening` line has `?file=sub%20dir/%E4%B8%AD%E6%96%87%20note.md`, `/api/file` for that path answers `200`, `/api/tree` lists `sub dir`. Plain case: the root is `plain` and the URL has `?file=p.md`. `p.png` exits `2` with `not a Markdown or HTML file`; the hidden file exits `2` with `cannot open file` |
 | AC-91 | M5 | §9.1 `--ignore` | `docs-browser base --port 0 --ignore drafts --ignore private`, where `base` holds `drafts/a.md`, `docs/drafts/b.md`, `docs/drafts-old/c.md`, `docs/keep.md`, `private/p.md`, `node_modules/x.md`; then `docs-browser base --ignore a/b` and `docs-browser base --ignore ""` | `/api/file` for `drafts/a.md`, `docs/drafts/b.md` and `private/p.md` answers `404`; `docs/keep.md` answers `200`; `/api/tree` lists `drafts-old` and not `node_modules`; the two invalid names exit `2` |
+| AC-92 | M3 | §7.3 remembered folders | Browser `/`: clear the `docs-browser.expanded.*` keys; open `docs`; reload. Then store `docs` and `gone/folder` under the same key and reload. Then set another root's key; then `Reset to defaults` | After the reload `docs` is open; the stored list keeps only `docs`; the other root's key is untouched by this page; `Reset to defaults` removes every key and leaves no folder open |
+| AC-93 | M3 | §7.3 VS Code link | Browser `/?file=docs/code.md`: read the `Open in VS Code` link of the file information bar (its `href` only; the link is never clicked) | The link reads `Open in VS Code`; its `href` is `vscode://file/` followed by the absolute path of `docs/code.md`, percent-encoded per segment |
+| AC-94 | M5 | §7.3 absolute path and root key | Start the server on loopback and on `--host 0.0.0.0` with the site fixture; read `/api/info?path=docs/code.md` and `/api/version` on each | `absolutePath` is present on loopback and absent on `0.0.0.0`; `rootKey` is 16 lowercase hex digits and equal on both |
 | AC-90 | M3 | §7.4 code copy | Browser `/?file=docs/code.md`: click the `Copy` button of the first code block; then `/?file=docs/palette.md` | Each code block has one button and the mermaid diagrams have none; after the click the button shows `✓` and the block's code text is unchanged |
 
 ### 13.5 Unit tests
@@ -887,6 +891,7 @@ site/
 | UT-22 | M5 | §9.1 default port fallback | Busy start port: the bind moves to the next free port in range; all tries busy: an OS-chosen port is used |
 | UT-23 | M5 | §9.1 file argument root | The root is the nearest `.git` above the file (a folder or a `.git` file); none: the file's folder; unsupported and missing files are refused |
 | UT-24 | M5 | §9.1 file URL | `?file=` value is percent-encoded per byte with `/` kept; the base URL is kept |
+| UT-26 | M5 | §7.3 root key | `root_key` is 16 lowercase hex digits, the same for the same root, different for another root, and does not contain the path |
 | UT-25 | M5 | §9.1 `--ignore` | A listed name hides that exact component at any depth; a longer name, a substring or another case stays visible; the built-in five stay hidden; a request for a hidden path is `NotVisible` |
 
 Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS the lookup succeeds and the visibility check then blocks it, on Linux the lookup fails with NotFound (T-0.8). Assertions on canonical strings (for example for `link-out`, which is `/private/etc/hosts` on macOS and `/etc/hosts` on Linux) must be platform-aware.
@@ -914,6 +919,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 | §7.4 full-screen diagram | AC-85 |
 | §7.3, §11 version display | AC-86 |
 | §7.3, §11 file information | AC-87, UT-19, UT-20, UT-21 |
+| §7.3 remembered folders, VS Code link | AC-92, AC-93, AC-94, UT-26 |
 | §7.4 code copy | AC-90 |
 | §6 theme | AC-71 |
 | §7.1 visibility, whitelist, case | AC-25, AC-33, AC-34, AC-36, UT-04 to UT-06 |
@@ -938,9 +944,7 @@ Case-variant inputs in UT-01 to UT-07 are portable only as "denied": on macOS th
 - Table of contents
 - Image / PDF preview
 - JSON / YAML preview
-- Remember expanded folders across sessions
 - Keyboard navigation
-- Open file in VS Code
 - Config file such as `.docs-browser.json`: not adopted; revisit only with a concrete need
 - Prebuilt cross-platform release binaries
 

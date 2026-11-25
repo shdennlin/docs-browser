@@ -1162,6 +1162,63 @@ checks['AC-87'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-92: expanded folders are remembered per root, pruned when gone, and cleared by Reset to defaults
+checks['AC-92'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    const openDirs = () => q("[...document.querySelectorAll('details[data-dir]')].filter(d => d.open).map(d => d.dataset.dir).sort()");
+    const expandedKeys = () => q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.expanded.') === 0)");
+    const r = {};
+    await p.goto('/'); await p.ready(); // localStorage is only readable on the served origin
+    await q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.expanded.') === 0).forEach(k => localStorage.removeItem(k)); true");
+    await p.goto('/'); await p.ready();
+    await q("(function () { var d = document.querySelector('details[data-dir=\"docs\"]'); d.open = true; return true; })()");
+    await waitFor(async () => (await expandedKeys()).length >= 1, 3000, 50);
+    // reload: the folder opens again without a click
+    await p.goto('/'); await p.ready();
+    r.afterReload = await openDirs();
+    // a saved folder that no longer exists is dropped on restore
+    const key = (await expandedKeys())[0];
+    await q(`localStorage.setItem(${JSON.stringify(key)}, JSON.stringify(['docs', 'gone/folder'])); true`);
+    await p.goto('/'); await p.ready();
+    r.pruned = await openDirs();
+    r.prunedStored = JSON.parse(await q(`localStorage.getItem(${JSON.stringify(key)})`));
+    // another root's key on the same origin is left alone by this page
+    const other = 'docs-browser.expanded.0000000000000000';
+    await q(`localStorage.setItem('${other}', JSON.stringify(['docs/subdir'])); true`);
+    await p.goto('/'); await p.ready();
+    r.otherKept = JSON.parse(await q(`localStorage.getItem('${other}')`))[0] === 'docs/subdir';
+    // Reset to defaults clears every saved root and collapses the tree
+    await q("(function () { document.getElementById('settings-open').click(); document.getElementById('settings-reset').click(); document.getElementById('settings-close').click(); return true; })()");
+    await waitFor(async () => {
+      const ks = await expandedKeys();
+      if (ks.length === 0) return true;
+      return ks.length === 1 && (await q(`localStorage.getItem(${JSON.stringify(ks[0])})`)) === '[]';
+    }, 3000, 50);
+    r.afterReset = await openDirs();
+    r.resetRemovedOther = (await q(`localStorage.getItem('${other}')`)) === null;
+    const ok = r.afterReload.includes('docs') && r.pruned.includes('docs') && !r.pruned.includes('gone/folder')
+      && !r.prunedStored.includes('gone/folder') && r.otherKept && r.afterReset.length === 0 && r.resetRemovedOther;
+    return [ok, JSON.stringify(r)];
+  } finally { await p.close(); }
+};
+
+// ---- AC-93: the file information bar links to the file in VS Code (href only, never clicked)
+checks['AC-93'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/?file=docs/code.md'); await p.ready();
+    await waitFor(() => p.ev("!!document.querySelector('#fileinfo .fi-vscode')"), 5000, 50);
+    const href = String(await q("document.querySelector('#fileinfo .fi-vscode').getAttribute('href')"));
+    const label = await q("document.querySelector('#fileinfo .fi-vscode').textContent");
+    const path = decodeURIComponent(href.replace(/^vscode:\/\/file/, ''));
+    const ok = /^vscode:\/\/file\//.test(href) && path.startsWith('/') && path.endsWith('/docs/code.md') && label === 'Open in VS Code';
+    return [ok, JSON.stringify({ label, tail: path.slice(-24) })];
+  } finally { await p.close(); }
+};
+
 // ---- AC-90: every code block has a copy button; it copies the code and not the button's text
 checks['AC-90'] = async (cdp) => {
   const p = await openPage(cdp, null);
