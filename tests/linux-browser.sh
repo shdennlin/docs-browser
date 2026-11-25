@@ -39,8 +39,8 @@ for d in range(60):
     for i in range(1000):
         open(f"/tmp/big/d{d:02d}/f{i:04d}.md", "w").write("# f\n")
 PY
-    /tmp/target/release/docs-browser tests/fixtures/site --port 4100 2>/tmp/s1.err &
-    /tmp/target/release/docs-browser /tmp/big --port 4102 2>/tmp/s2.err &
+    /tmp/target/release/docs-browser tests/fixtures/site --no-open --port 4100 2>/tmp/s1.err &
+    /tmp/target/release/docs-browser /tmp/big --no-open --port 4102 2>/tmp/s2.err &
     echo "rustc: $(rustc --version)  uname: $(uname -sr)" > /tmp/info
     wait
   ' >/dev/null

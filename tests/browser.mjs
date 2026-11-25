@@ -54,10 +54,10 @@ async function withEdit(rel, edit, fn) {
 }
 function startServer(port) {
   if (DOCKER) {
-    spawnSync('docker', ['exec', '-d', DOCKER, CBIN, CROOT, '--port', String(port)]);
+    spawnSync('docker', ['exec', '-d', DOCKER, CBIN, CROOT, '--port', String(port), '--no-open']);
     return { stop: () => { spawnSync('docker', ['exec', DOCKER, 'pkill', '-INT', '-f', `docs-browser.*--port ${port}`]); } };
   }
-  const proc = spawn(BIN, [ROOT, '--port', String(port)], { stdio: 'ignore' });
+  const proc = spawn(BIN, [ROOT, '--port', String(port), '--no-open'], { stdio: 'ignore' });
   return { stop: () => proc.kill('SIGINT') };
 }
 async function portAnswers(port, want, timeout = 10000) {

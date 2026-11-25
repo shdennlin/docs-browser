@@ -11,6 +11,8 @@ use docs_browser::watch;
 
 /// Not a port that other dev servers like to take (3000, 4000, 5173, 8000, 8080 ...).
 const DEFAULT_PORT: u16 = 4747;
+/// Without `--port`, the next ports tried when the default one is busy (4747 to 4766).
+const PORT_TRIES: u16 = 20;
 
 #[derive(Parser)]
 #[command(name = "docs-browser", version, about = "Zero-config local browser for project documentation")]
@@ -18,14 +20,17 @@ struct Cli {
     /// Directory to serve
     #[arg(default_value = ".")]
     directory: PathBuf,
-    /// TCP port (0 asks the OS for a free port)
-    #[arg(long, default_value_t = DEFAULT_PORT)]
-    port: u16,
+    /// TCP port, 0 asks the OS for a free one [default: 4747]
+    #[arg(long)]
+    port: Option<u16>,
     /// Address to bind (an IP address, or `localhost`)
     #[arg(long, default_value = "127.0.0.1", value_parser = parse_host)]
     host: IpAddr,
-    /// Open the page in the default browser
-    #[arg(long)]
+    /// Do not open the page in the default browser (it opens by default)
+    #[arg(long = "no-open")]
+    no_open: bool,
+    /// Accepted for compatibility with earlier versions; opening is the default now
+    #[arg(long, hide = true)]
     open: bool,
     /// Make dot-prefixed files and folders visible and readable
     #[arg(long)]
@@ -91,11 +96,19 @@ async fn run() -> Result<(), Failure> {
     })?;
     let root = resolver.root().to_path_buf();
 
-    let wanted = SocketAddr::new(cli.host, cli.port);
-    let listener = tokio::net::TcpListener::bind(wanted)
-        .await
-        .map_err(|e| Failure { code: 1, message: format!("cannot bind {wanted}: {e}") })?;
+    let listener = match cli.port {
+        Some(port) => {
+            let wanted = SocketAddr::new(cli.host, port);
+            tokio::net::TcpListener::bind(wanted)
+                .await
+                .map_err(|e| Failure { code: 1, message: format!("cannot bind {wanted}: {e}") })?
+        }
+        None => bind_default(cli.host).await.map_err(|e| Failure { code: 1, message: e })?,
+    };
     let local = listener.local_addr().map_err(|e| Failure { code: 1, message: e.to_string() })?;
+    if cli.port.is_none() && local.port() != DEFAULT_PORT {
+        docs_browser::elog!("note: port {DEFAULT_PORT} is busy, using {}", local.port());
+    }
 
     if !local.ip().is_loopback() {
         docs_browser::elog!(
@@ -109,7 +122,7 @@ async fn run() -> Result<(), Failure> {
     state.verbose.store(cli.verbose, std::sync::atomic::Ordering::Relaxed);
     docs_browser::elog!("Serving {} at http://{}", shown(&root), local);
 
-    if cli.open {
+    if !cli.no_open {
         let url = docs_browser::server::browse_url(local);
         if let Err(e) = open::that_detached(&url) {
             docs_browser::elog!("warning: could not open a browser for {url}: {e}");
@@ -147,6 +160,26 @@ async fn run() -> Result<(), Failure> {
     Ok(())
 }
 
+/// Binds the first free port from `DEFAULT_PORT` on, and only when every one of those is busy an OS-chosen
+/// port. Any other bind error (for example a permission problem) is reported at once.
+async fn bind_default(host: IpAddr) -> Result<tokio::net::TcpListener, String> {
+    bind_from(host, DEFAULT_PORT, PORT_TRIES).await
+}
+
+async fn bind_from(host: IpAddr, start: u16, tries: u16) -> Result<tokio::net::TcpListener, String> {
+    for offset in 0..tries {
+        let Some(port) = start.checked_add(offset) else { break };
+        match tokio::net::TcpListener::bind(SocketAddr::new(host, port)).await {
+            Ok(l) => return Ok(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => continue,
+            Err(e) => return Err(format!("cannot bind {}: {e}", SocketAddr::new(host, port))),
+        }
+    }
+    tokio::net::TcpListener::bind(SocketAddr::new(host, 0))
+        .await
+        .map_err(|e| format!("cannot bind {}: {e}", SocketAddr::new(host, 0)))
+}
+
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
@@ -162,3 +195,32 @@ async fn shutdown_signal() {
         let _ = tokio::signal::ctrl_c().await;
     }
 }
+
+#[cfg(test)]
+mod port_tests {
+    use super::*;
+
+    /// UT-22: the default port falls through to the next free one; an explicit `0` is never used here.
+    #[tokio::test]
+    async fn ut_22_busy_default_port_moves_to_the_next_free_one() {
+        let host = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        // a free start port: let the OS choose one, then keep it occupied
+        let busy = tokio::net::TcpListener::bind(SocketAddr::new(host, 0)).await.unwrap();
+        let start = busy.local_addr().unwrap().port();
+        let next = bind_from(host, start, 5).await.unwrap();
+        let got = next.local_addr().unwrap().port();
+        assert_ne!(got, start, "must not reuse the busy port");
+        assert!(got > start && got < start + 5, "moved to the next free port, got {got}");
+    }
+
+    #[tokio::test]
+    async fn ut_22_all_tries_busy_falls_back_to_an_os_port() {
+        let host = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let busy = tokio::net::TcpListener::bind(SocketAddr::new(host, 0)).await.unwrap();
+        let start = busy.local_addr().unwrap().port();
+        let got = bind_from(host, start, 1).await.unwrap().local_addr().unwrap().port();
+        assert_ne!(got, start);
+        assert_ne!(got, 0);
+    }
+}
+

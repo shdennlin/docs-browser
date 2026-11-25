@@ -11,8 +11,8 @@ a file changes. One static binary, no configuration file, no network access need
 <sub>Screenshots use the fictional demo docs in `examples/demo-docs`. Light theme: [docs/images/screenshot-light.png](docs/images/screenshot-light.png). Regenerate with `docs-browser examples/demo-docs --port 4790` and `node tests/screenshot.mjs`.</sub>
 
 ```bash
-docs-browser .            # serve the current folder at http://127.0.0.1:4747
-docs-browser ./docs --port 8080 --open
+docs-browser .            # serve the current folder at http://127.0.0.1:4747 and open it
+docs-browser ./docs --port 8080    # the browser opens automatically; add --no-open to keep it closed
 ```
 
 ## Install
@@ -37,9 +37,9 @@ Supported platforms: macOS and Linux. Windows is not supported.
 ```text
 docs-browser [OPTIONS] [DIRECTORY]
 
-  --port <PORT>      TCP port, 0 asks the OS for a free one      [default: 4747]
+  --port <PORT>      TCP port, 0 asks the OS for a free one      [default: 4747, then the next free one]
   --host <HOST>      address to bind: an IP address or localhost [default: 127.0.0.1]
-  --open             open the page in the default browser
+  --no-open          do not open the page in the default browser (it opens by default)
   --include-hidden   make dot-prefixed files and folders visible and readable
   -v, --verbose      log every request to stderr
   -h, --help         print help
@@ -48,7 +48,7 @@ docs-browser [OPTIONS] [DIRECTORY]
 
 - Exit codes: `0` normal stop, `1` runtime error such as a port already in use, `2` bad usage or a
   directory that is missing, not a directory, or cannot be read.
-- The URL is printed at startup (`Serving <folder> at http://127.0.0.1:4747`).
+- The URL is printed at startup (`Serving <folder> at http://127.0.0.1:4747`). If 4747 is busy and `--port` was not given, the next free port is used and a `note:` line says so.
 - Only Markdown (`.md`, `.markdown`) and HTML (`.htm`, `.html`) files are listed. A page can also load the
   CSS, JavaScript, images and fonts next to it. Nothing else is served.
 - `/?file=docs/architecture.md#section` opens a file directly; the address bar always shows the current file.

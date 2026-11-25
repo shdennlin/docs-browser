@@ -67,6 +67,11 @@ def raw_get(port, target, headers=None, method="GET", host=None):
     return out
 
 
+def quiet(args):
+    """Tests never open a browser tab: `--no-open` unless the check passes `--open` itself (AC-63, AC-68)."""
+    return list(args) if "--open" in args or "--no-open" in args else list(args) + ["--no-open"]
+
+
 class Server:
     """Starts the docs-browser binary on a test port and stops it afterwards."""
 
@@ -82,7 +87,7 @@ class Server:
         t0 = time.time()
         with open(self.stderr_path, "wb") as err:
             self.proc = subprocess.Popen(
-                [self.binary, self.root, "--port", str(self.port)] + self.extra,
+                [self.binary, self.root, "--port", str(self.port)] + quiet(self.extra),
                 stdout=subprocess.DEVNULL,
                 stderr=err,
             )
@@ -783,7 +788,7 @@ def run_cli(ctx, args, env=None, cwd=None, timeout=8):
     """Runs the binary to completion and returns (returncode, stdout, stderr)."""
     e = dict(os.environ)
     e.update(env or {})
-    r = subprocess.run([ctx["bin"]] + args, capture_output=True, text=True, timeout=timeout, env=e, cwd=cwd)
+    r = subprocess.run([ctx["bin"]] + quiet(args), capture_output=True, text=True, timeout=timeout, env=e, cwd=cwd)
     return r.returncode, r.stdout, r.stderr
 
 
@@ -796,7 +801,7 @@ class Proc:
         e = dict(os.environ)
         e.update(env or {})
         with open(self.err_path, "wb") as err:
-            self.proc = subprocess.Popen([ctx["bin"]] + args, stdout=subprocess.DEVNULL,
+            self.proc = subprocess.Popen([ctx["bin"]] + quiet(args), stdout=subprocess.DEVNULL,
                                          stderr=err, env=e, cwd=cwd)
 
     def stderr(self):
@@ -905,6 +910,37 @@ def ac_61(ctx):
     return code == 1 and "error: cannot bind 127.0.0.1:4110" in err, f"exit={code} stderr={err.strip()[:90]!r}"
 
 
+@ac("AC-88")
+def ac_88(ctx):
+    """Without --port a busy 4747 moves to the next free port and says so; an explicit busy port is an error."""
+    # Hold 127.0.0.1:4747 unless something (for example a docs-browser the user runs) already does; the
+    # check needs only that the port is busy, and it never stops another process.
+    held = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        held.bind(("127.0.0.1", 4747))
+        held.listen(1)
+    except OSError:
+        held.close()
+        held = None
+    pr = None
+    try:
+        pr = Proc(ctx, [FIXTURE_SITE])
+        pr.wait_for_stderr("Serving")
+        m = re.search(r"http://127\.0\.0\.1:(\d+)", pr.stderr())
+        port = int(m.group(1)) if m else 0
+        status = get(port, "/")[0] if port else None
+        note = "note: port 4747 is busy, using" in pr.stderr()
+    finally:
+        if pr:
+            pr.stop()
+        if held:
+            held.close()
+    code, _, err = run_cli(ctx, [FIXTURE_SITE, "--port", "4747"])
+    moved = 4747 < port <= 4766 and status == 200 and note
+    explicit = code == 1 and "error: cannot bind 127.0.0.1:4747" in err
+    return moved and explicit, f"moved to {port} status={status} note={note}; explicit busy port: exit={code}"
+
+
 @ac("AC-62")
 def ac_62(ctx):
     pr = Proc(ctx, [FIXTURE_SITE, "--port", "0"])
@@ -955,7 +991,7 @@ def ac_68(ctx):
 def ac_64(ctx):
     h = run_cli(ctx, ["--help"])
     v = run_cli(ctx, ["--version"])
-    flags = ["--port", "--host", "--open", "--include-hidden", "--verbose"]
+    flags = ["--port", "--host", "--no-open", "--include-hidden", "--verbose"]
     missing = [f for f in flags if f not in h[1]]
     if "[default: 4747]" not in h[1]:
         missing.append("[default: 4747]")
