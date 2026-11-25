@@ -930,6 +930,10 @@ def ac_89(ctx):
             f.write("# p\n")
         with open(os.path.join(plain, "p.png"), "wb") as f:
             f.write(b"x")
+        with open(os.path.join(plain, "p.json"), "w") as f:
+            f.write("{}\n")
+        with open(os.path.join(plain, "p.svg"), "w") as f:
+            f.write("<svg/>\n")
         rel = "sub dir/中文 note.md"
         pr = Proc(ctx, [note, "--port", "0"])
         try:
@@ -950,15 +954,27 @@ def ac_89(ctx):
         finally:
             pl.stop()
         plain_ok = os.path.realpath(plain) in perr and "?file=p.md" in perr
-        png = run_cli(ctx, [os.path.join(plain, "p.png")])
+        def opened(path):
+            op = Proc(ctx, [path, "--port", "0"])
+            try:
+                op.wait_for_stderr("Opening")
+                return op.stderr()
+            finally:
+                op.stop()
+        png_err = opened(os.path.join(plain, "p.png"))
+        json_err = opened(os.path.join(plain, "p.json"))
+        png_ok = os.path.realpath(plain) in png_err and "?file=p.png" in png_err
+        json_ok = "?file=p.json" in json_err
+        svg = run_cli(ctx, [os.path.join(plain, "p.svg")])
         hidden = run_cli(ctx, [os.path.join(repo, ".secret.md")])
     finally:
         shutil.rmtree(base, ignore_errors=True)
     ok = (root_ok and url_ok and file_status == 200 and tree_has_dir and plain_ok
-          and png[0] == 2 and "not a Markdown or HTML file" in png[2]
+          and png_ok and json_ok
+          and svg[0] == 2 and "not a Markdown, HTML, image, PDF, JSON or YAML file" in svg[2]
           and hidden[0] == 2 and "cannot open file" in hidden[2])
     return ok, (f"repo root={root_ok} url={url_ok} file={file_status} tree={tree_has_dir}; plain={plain_ok}; "
-                f"png exit={png[0]}; hidden exit={hidden[0]}")
+                f"png opens={png_ok}; json opens={json_ok}; svg exit={svg[0]}; hidden exit={hidden[0]}")
 
 
 @ac("AC-91")
