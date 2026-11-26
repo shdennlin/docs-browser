@@ -1553,8 +1553,9 @@
     if (j && typeof j.rootKey === 'string') state.rootKey = j.rootKey;
     if (!j || typeof j.version !== 'string') return;
     var el = $('#app-version');
-    el.textContent = 'v' + j.version;
-    el.title = 'docs-browser v' + j.version;
+    var build = typeof j.build === 'string' && j.build ? j.build : '';
+    el.textContent = 'v' + j.version + (build ? ' \u00b7 ' + build : '');
+    el.title = 'docs-browser v' + j.version + (build ? ' (build ' + build + ')' : '');
   }).catch(function () { /* the footer simply stays without a version */ });
 
   // ------------------------------------------------------------ start

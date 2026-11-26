@@ -1124,7 +1124,9 @@ checks['AC-86'] = async (cdp) => {
       var s=document.getElementById('settings-open').getBoundingClientRect();
       return {inside:v.left>=f.left&&v.right<=f.right+0.5&&v.top>=f.top&&v.bottom<=f.bottom+0.5,rightOfButtons:v.left>=s.right-0.5,w:v.width}})()`);
     const r = { shown, api, cargo, geo };
-    const ok = shown === 'v' + api.version && api.version === cargo && /^\d+\.\d+\.\d+$/.test(api.version)
+    // an untagged build shows its short commit hash after the version; a tagged build shows none
+    const hashOk = api.build === null || /^[0-9a-f]{7,40}$/.test(api.build);
+    const ok = shown === 'v' + api.version + (api.build ? ' \u00b7 ' + api.build : '') && hashOk && api.version === cargo && /^\d+\.\d+\.\d+$/.test(api.version)
       && geo.inside && geo.rightOfButtons && geo.w > 20;
     return [ok, JSON.stringify(r)];
   } finally { await p.close(); }

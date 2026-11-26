@@ -345,6 +345,8 @@ async fn stamp_headers(req: Request, next: Next) -> Response {
 async fn api_version(State(state): State<Arc<AppState>>) -> Response {
     Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
+        // the short commit hash of an untagged build, else null (the footer shows it after the version)
+        "build": match env!("DOCS_BROWSER_BUILD_HASH") { "" => serde_json::Value::Null, h => serde_json::Value::from(h) },
         "rootKey": root_key(state.resolver.root()),
     }))
     .into_response()
