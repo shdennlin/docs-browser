@@ -1235,6 +1235,7 @@ checks['AC-101'] = async (cdp) => {
     await waitFor(async () => (await activePath()) === 'README.md', 5000, 50);
     await click('#tabs .tab[data-path="README.md"] .tab-pin');
     r.pinned = await tabs();
+    r.pinIcon = await q("(function(){var b=document.querySelector('#tabs .tab[data-path=\"README.md\"] .tab-pin');var sv=b&&b.querySelector('svg');return {svg:!!sv,text:b?b.textContent.trim():null,fill:sv?getComputedStyle(sv).fill:null}})()");
     // a command-click opens docs/code.md in a tab of its own; a plain click on another file replaces that unpinned tab
     await click('#tree a[data-path="docs/code.md"]', { ctrlKey: true });
     await waitFor(async () => (await activePath()) === 'docs/code.md', 5000, 50);
@@ -1254,7 +1255,7 @@ checks['AC-101'] = async (cdp) => {
     await click('#tabs .tab[data-path="README.md"] .tab-pin');
     r.unpinned = await tabs();
     r.closeAfterUnpin = await q("!!document.querySelector('#tabs .tab[data-path=\"README.md\"] .tab-close')");
-    const ok = r.pinned.join() === '*P:README.md'
+    const ok = r.pinned.join() === '*P:README.md' && r.pinIcon.svg && r.pinIcon.text === '' && r.pinIcon.fill !== 'none'
       && r.afterReplace.join() === 'P:README.md,*docs/architecture.md'
       && r.closeOnPinned === false
       && r.afterMiddle.join() === 'P:README.md,*docs/architecture.md'

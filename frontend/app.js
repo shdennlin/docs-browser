@@ -893,6 +893,8 @@
     return same && parts.length > 1 ? parts[parts.length - 2] + '/' + name : name;
   }
 
+  // Pin icon: an outline line drawing (Lucide-style); a pinned tab fills it with currentColor in style.css.
+  var PIN_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
   function renderTabs() {
     clear(tabsEl);
     tabsEl.hidden = state.tabs.length === 0;
@@ -913,7 +915,7 @@
       pin.setAttribute('aria-pressed', String(!!t.pinned));
       pin.setAttribute('aria-label', (t.pinned ? 'Unpin tab ' : 'Pin tab ') + t.path);
       pin.title = t.pinned ? 'Unpin tab' : 'Pin tab';
-      pin.textContent = '\uD83D\uDCCC';
+      pin.innerHTML = PIN_ICON; // outline when unpinned; filled through CSS when pinned
       tab.appendChild(name);
       tab.appendChild(pin);
       if (t.pinned) {
