@@ -867,17 +867,22 @@
     var key = tabsKey();
     if (!key) return;
     var active = state.active >= 0 && state.tabs[state.active] ? state.tabs[state.active].path : null;
-    try { localStorage.setItem(key, JSON.stringify({ tabs: state.tabs.map(function (t) { return t.path; }), active: active })); } catch (e) { /* storage may be off */ }
+    var pinned = state.tabs.filter(function (t) { return t.pinned; }).map(function (t) { return t.path; });
+    try { localStorage.setItem(key, JSON.stringify({ tabs: state.tabs.map(function (t) { return t.path; }), active: active, pinned: pinned })); } catch (e) { /* storage may be off */ }
   }
   // Stored paths that still exist in the tree are kept (all of them when the tree is not known).
   function readTabs() {
-    var none = { tabs: [], active: null };
+    var none = { tabs: [], active: null, pinned: [] };
     try {
       var key = tabsKey();
       var raw = key ? JSON.parse(localStorage.getItem(key) || 'null') : null;
       if (!raw || typeof raw !== 'object') return none;
       var known = function (x) { return typeof x === 'string' && (!state.treePaths.size || state.treePaths.has(x)); };
-      return { tabs: Array.isArray(raw.tabs) ? raw.tabs.filter(known) : [], active: known(raw.active) ? raw.active : null };
+      return {
+        tabs: Array.isArray(raw.tabs) ? raw.tabs.filter(known) : [],
+        active: known(raw.active) ? raw.active : null,
+        pinned: Array.isArray(raw.pinned) ? raw.pinned.filter(known) : []
+      };
     } catch (e) { return none; }
   }
 
@@ -902,16 +907,42 @@
       var name = document.createElement('span');
       name.className = 'tab-name';
       name.textContent = tabLabel(t.path);
-      var close = document.createElement('button');
-      close.type = 'button';
-      close.className = 'tab-close';
-      close.setAttribute('aria-label', 'Close tab ' + t.path);
-      close.textContent = '×';
+      var pin = document.createElement('button');
+      pin.type = 'button';
+      pin.className = 'tab-pin';
+      pin.setAttribute('aria-pressed', String(!!t.pinned));
+      pin.setAttribute('aria-label', (t.pinned ? 'Unpin tab ' : 'Pin tab ') + t.path);
+      pin.title = t.pinned ? 'Unpin tab' : 'Pin tab';
+      pin.textContent = '\uD83D\uDCCC';
       tab.appendChild(name);
-      tab.appendChild(close);
+      tab.appendChild(pin);
+      if (t.pinned) {
+        tab.classList.add('pinned'); // a pinned tab has no close button: unpin it first
+      } else {
+        var close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'tab-close';
+        close.setAttribute('aria-label', 'Close tab ' + t.path);
+        close.textContent = '×';
+        tab.appendChild(close);
+      }
       tabsEl.appendChild(tab);
     });
     saveTabs();
+  }
+
+  // Pinned tabs come first, in the order they were pinned or opened; the active tab stays the same file.
+  function pinnedFirst(tabs) {
+    return tabs.filter(function (t) { return t.pinned; }).concat(tabs.filter(function (t) { return !t.pinned; }));
+  }
+  function togglePin(i) {
+    var t = state.tabs[i];
+    if (!t) return;
+    var activePath = state.active >= 0 && state.tabs[state.active] ? state.tabs[state.active].path : null;
+    t.pinned = !t.pinned;
+    state.tabs = pinnedFirst(state.tabs);
+    state.active = activePath ? state.tabs.findIndex(function (x) { return x.path === activePath; }) : -1;
+    renderTabs();
   }
 
   // Called by showFile for every navigation: the file being shown belongs to a tab. An open tab is activated;
@@ -920,7 +951,7 @@
     if (!path) { state.active = -1; renderTabs(); return; }
     var i = state.tabs.findIndex(function (t) { return t.path === path; });
     if (i === -1) {
-      if (state.active >= 0 && state.tabs[state.active]) { state.tabs[state.active] = { path: path, scroll: 0 }; i = state.active; }
+      if (state.active >= 0 && state.tabs[state.active] && !state.tabs[state.active].pinned) { state.tabs[state.active] = { path: path, scroll: 0 }; i = state.active; }
       else { state.tabs.push({ path: path, scroll: 0 }); i = state.tabs.length - 1; }
     }
     state.active = i;
@@ -935,7 +966,7 @@
   }
 
   function closeTab(i) {
-    if (i < 0 || i >= state.tabs.length) return;
+    if (i < 0 || i >= state.tabs.length || state.tabs[i].pinned) return;
     var wasActive = i === state.active;
     state.tabs.splice(i, 1);
     if (!wasActive) {
@@ -963,7 +994,9 @@
     var tab = e.target.closest && e.target.closest('.tab');
     if (!tab) return;
     var i = Number(tab.dataset.index);
-    if (e.target.closest('.tab-close')) closeTab(i); else activateTab(i);
+    if (e.target.closest('.tab-pin')) togglePin(i);
+    else if (e.target.closest('.tab-close')) closeTab(i);
+    else activateTab(i);
   });
   tabsEl.addEventListener('auxclick', function (e) {
     var tab = e.target.closest && e.target.closest('.tab');
@@ -1568,7 +1601,8 @@
       banner('Server unreachable, retrying');
     }
     var stored = readTabs();
-    state.tabs = stored.tabs.map(function (x) { return { path: x, scroll: 0 }; });
+    state.tabs = stored.tabs.map(function (x) { return { path: x, scroll: 0, pinned: stored.pinned.indexOf(x) !== -1 }; });
+    state.tabs = pinnedFirst(state.tabs);
     state.active = -1;
     var loc = L.parseLocation(location.search, location.hash);
     var file = loc.file, hash = loc.hash;

@@ -1218,6 +1218,53 @@ checks['AC-92'] = async (cdp) => {
 };
 
 // ---- AC-93: the file information bar links to the file in VS Code (href only, never clicked)
+// ---- AC-101: pinned tabs stay put: first in the bar, no close button, never replaced, kept across a reload
+checks['AC-101'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  const clearTabs = () => p.ev("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).forEach(k => localStorage.removeItem(k)); true");
+  try {
+    const q = (e) => p.ev(e);
+    const tabs = () => q("Array.from(document.querySelectorAll('#tabs .tab')).map(function(t){return (t.classList.contains('active')?'*':'')+(t.classList.contains('pinned')?'P:':'')+t.dataset.path})");
+    const click = (sel, init) => q(`(function(){var a=document.querySelector(${JSON.stringify(sel)});if(!a)return false;a.dispatchEvent(new MouseEvent('click',Object.assign({bubbles:true,cancelable:true,button:0},${JSON.stringify(init || {})})));return true})()`);
+    const middle = (sel) => q(`(function(){var a=document.querySelector(${JSON.stringify(sel)});if(!a)return false;a.dispatchEvent(new MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}));return true})()`);
+    const activePath = () => q("(document.querySelector('#tabs .tab.active')||{dataset:{}}).dataset.path || null");
+    const r = {};
+    await p.goto('/'); await p.ready(); // localStorage is only readable on the served origin
+    await clearTabs();
+    await p.goto('/?file=README.md'); await p.ready();
+    await waitFor(async () => (await activePath()) === 'README.md', 5000, 50);
+    await click('#tabs .tab[data-path="README.md"] .tab-pin');
+    r.pinned = await tabs();
+    // a command-click opens docs/code.md in a tab of its own; a plain click on another file replaces that unpinned tab
+    await click('#tree a[data-path="docs/code.md"]', { ctrlKey: true });
+    await waitFor(async () => (await activePath()) === 'docs/code.md', 5000, 50);
+    await click('#tree a[data-path="docs/architecture.md"]');
+    await waitFor(async () => (await activePath()) === 'docs/architecture.md', 5000, 50);
+    r.afterReplace = await tabs();
+    // a pinned tab has no close button and a middle click does not close it
+    r.closeOnPinned = await q("!!document.querySelector('#tabs .tab[data-path=\"README.md\"] .tab-close')");
+    await middle('#tabs .tab[data-path="README.md"]');
+    await sleep(100);
+    r.afterMiddle = await tabs();
+    // a bare address reopens both, the pinned one first
+    await p.goto('/'); await p.ready();
+    await waitFor(async () => (await tabs()).length === 2, 5000, 50);
+    r.restored = await tabs();
+    // unpinning turns it back into an ordinary tab, which can be closed again
+    await click('#tabs .tab[data-path="README.md"] .tab-pin');
+    r.unpinned = await tabs();
+    r.closeAfterUnpin = await q("!!document.querySelector('#tabs .tab[data-path=\"README.md\"] .tab-close')");
+    const ok = r.pinned.join() === '*P:README.md'
+      && r.afterReplace.join() === 'P:README.md,*docs/architecture.md'
+      && r.closeOnPinned === false
+      && r.afterMiddle.join() === 'P:README.md,*docs/architecture.md'
+      && r.restored.join() === 'P:README.md,*docs/architecture.md'
+      && r.unpinned.join() === 'README.md,*docs/architecture.md'
+      && r.closeAfterUnpin === true;
+    return [ok, JSON.stringify(r)];
+  } finally { await clearTabs().catch(() => {}); await p.close(); }
+};
+
 // ---- AC-100: favorite files and folders, kept per root and listed above the tree
 checks['AC-100'] = async (cdp) => {
   const p = await openPage(cdp, null);

@@ -279,6 +279,12 @@ body.fullwidth #preview { max-width: none; }
 .tab .tab-name { overflow: hidden; text-overflow: ellipsis; }
 .tab .tab-close { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; opacity: .6; }
 .tab .tab-close:hover { background: var(--hover); opacity: 1; }
+/* Pin: faint, full on hover or when pinned; a pinned tab shows a short name */
+.tab .tab-pin { flex: none; padding: 0 2px; border: 0; background: transparent; color: inherit; cursor: pointer; font-size: 11px; line-height: 1; opacity: .3; }
+.tab .tab-pin:hover, .tab .tab-pin[aria-pressed="true"], .tab:hover .tab-pin, .tab.active .tab-pin { opacity: 1; }
+.tab:not(.active) .tab-pin:not([aria-pressed="true"]) { visibility: hidden; }
+.tab:not(.active):hover .tab-pin, .tab:focus-within .tab-pin { visibility: visible; }
+.tab.pinned .tab-name { max-width: 9em; }
 .tab:not(.active) .tab-close { visibility: hidden; }
 .tab:not(.active):hover .tab-close, .tab:focus-within .tab-close { visibility: visible; }
 .tab.active .tab-close { opacity: .9; }
