@@ -259,11 +259,18 @@
         var details = document.createElement('details');
         details.dataset.dir = dirPath;
         if (state.expanded.has(dirPath)) details.open = true;
+        // A folder's children are built only when it opens (once), so a collapsed tree costs one level per open folder.
+        var built = false;
+        function fillChildren() {
+          if (built) return;
+          built = true;
+          details.appendChild(buildList(e.children || [], dirPath));
+        }
         details.addEventListener('toggle', function () {
           // Rendering opens the folders already in state.expanded, and each open fires a toggle event.
           // Those echoes change nothing, so they are skipped and do not trigger a save.
           if (details.open === state.expanded.has(dirPath)) return;
-          if (details.open) state.expanded.add(dirPath); else state.expanded.delete(dirPath);
+          if (details.open) { state.expanded.add(dirPath); fillChildren(); } else state.expanded.delete(dirPath);
           scheduleSaveExpanded();
         });
         var summary = document.createElement('summary');
@@ -289,7 +296,7 @@
           summary.appendChild(btn);
         });
         details.appendChild(summary);
-        details.appendChild(buildList(e.children || [], dirPath));
+        if (state.expanded.has(dirPath)) fillChildren();
         li.appendChild(details);
       } else {
         var a = document.createElement('a');
@@ -311,16 +318,19 @@
 
   // `expandAncestors` is true on navigation only (PRD 5): the folders of the opened file open then.
   function markSelected(expandAncestors) {
+    if (expandAncestors && state.current) {
+      // Folders that are not open have no children in the DOM yet, so a change re-renders the tree from state.
+      var changed = false;
+      L.ancestors(state.current).forEach(function (dir) {
+        if (state.expanded.has(dir)) return;
+        state.expanded.add(dir);
+        changed = true;
+      });
+      if (changed) { renderTree(); return; }
+    }
     var prev = els.tree.querySelector('a.selected');
     if (prev) prev.classList.remove('selected');
     if (!state.current) return;
-    if (expandAncestors) {
-      L.ancestors(state.current).forEach(function (dir) {
-        state.expanded.add(dir);
-        var d = els.tree.querySelector('details[data-dir="' + CSS.escape(dir) + '"]');
-        if (d) d.open = true;
-      });
-    }
     saveExpanded();
     var link = Array.prototype.find.call(els.tree.querySelectorAll('a[data-path]'), function (a) {
       return a.dataset.path === state.current;

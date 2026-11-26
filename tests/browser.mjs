@@ -593,7 +593,8 @@ checks['AC-52'] = async (cdp) => {
     server = startServer(PORT);
     await portAnswers(PORT, true);
     const cleared = await waitFor(() => p.ev("document.getElementById('live-status').hidden"), 25000, 100);
-    const refetched = await waitFor(() => p.ev(`!!document.querySelector('#tree a[data-path="${rel}"]')`), 10000, 100);
+    // docs/ is closed on this page, and its children are built only when it opens: open it, then look for the file.
+    const refetched = await waitFor(() => p.ev(`(function(){var d=document.querySelector('#tree details[data-dir="docs"]');if(d&&!d.open)d.open=true;return !!document.querySelector('#tree a[data-path="${rel}"]')})()`), 10000, 100);
     const marker = await p.ev('window.__marker');
     await p.close();
     return [!!down && !!cleared && !!refetched && marker === 52,
@@ -656,11 +657,14 @@ checks['AC-72'] = async (cdp) => {
   try {
     const badges = await p.ev("(function(){var o={};document.querySelectorAll('#tree a[data-path]').forEach(function(a){o[a.dataset.path]=(a.querySelector('.badge')||{}).textContent});return o})()");
     const openCount = () => p.ev("document.querySelectorAll('#tree details[open]').length");
+    // Folders are built when they open, so the count at load is only the open path to README.md.
     const total = await p.ev("document.querySelectorAll('#tree details').length");
     await p.ev("document.getElementById('collapse-all').click(); true");
     const afterCollapse = await openCount();
     await p.ev("document.getElementById('expand-all').click(); true");
     const afterExpand = await openCount();
+    const allFolders = await p.ev("document.querySelectorAll('#tree details').length");
+    const closedAfterExpand = await p.ev("document.querySelectorAll('#tree details:not([open])').length");
     await p.ev("document.getElementById('collapse-all').click(); true");
     const again = await openCount();
     // icons: SVG, no text, drawn in the button's colour (so they follow the theme), expand differs from collapse
@@ -674,8 +678,8 @@ checks['AC-72'] = async (cdp) => {
     await p.goto('/?file=README.md'); await p.ready();
     const lightStroke = await p.ev("getComputedStyle(document.querySelector('#expand-all svg path')).stroke");
     const ok = iconOk && darkStroke !== lightStroke && badges['README.md'] === 'MD' && badges['docs/flow.html'] === 'HTML' && badges['docs/architecture.md'] === 'MD'
-      && total >= 2 && afterCollapse === 0 && afterExpand === total && again === 0;
-    return [ok, JSON.stringify({ badges: [badges['README.md'], badges['docs/flow.html']], total, afterCollapse, afterExpand, again, iconOk, darkStroke, lightStroke, icons })];
+      && total >= 2 && afterCollapse === 0 && afterExpand === allFolders && closedAfterExpand === 0 && allFolders >= total && again === 0;
+    return [ok, JSON.stringify({ badges: [badges['README.md'], badges['docs/flow.html']], total, allFolders, afterCollapse, afterExpand, closedAfterExpand, again, iconOk, darkStroke, lightStroke, icons })];
   } finally { await p.close(); }
 };
 
