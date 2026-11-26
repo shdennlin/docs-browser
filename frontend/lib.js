@@ -36,13 +36,21 @@
   // The highlighting language of a text preview (highlight.js name).
   function textLanguage(path) { return ext(path) === 'json' ? 'json' : 'yaml'; }
   // The small label before a tree entry: its CSS class and its text (PRD 7.3).
+  // One icon per file type: a page in the type's colour (the favicon's palette), drawn as inline SVG.
+  function pageIcon(color) {
+    return '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">'
+      + '<path d="M3.5 1.5h6l3 3v10a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z" fill="' + color + '"/>'
+      + '<path d="M9.5 1.5v3h3" fill="none" stroke="#282a36" stroke-width="1"/>'
+      + '<path d="M5 9h6M5 11.5h6" fill="none" stroke="#282a36" stroke-width="1" stroke-linecap="round"/></svg>';
+  }
+  // The type of a listed file: its CSS class, its name (the tooltip) and its icon.
   function badgeFor(path) {
-    if (isHtml(path)) return { cls: 'html', text: 'HTML' };
-    if (isPreviewImage(path)) return { cls: 'img', text: 'IMG' };
-    if (isPdf(path)) return { cls: 'pdf', text: 'PDF' };
-    if (ext(path) === 'json') return { cls: 'json', text: 'JSON' };
-    if (isPreviewText(path)) return { cls: 'yaml', text: 'YAML' };
-    return { cls: 'md', text: 'MD' };
+    if (isHtml(path)) return { cls: 'html', label: 'HTML', icon: pageIcon('#ffb86c') };
+    if (isPreviewImage(path)) return { cls: 'img', label: 'Image', icon: pageIcon('#50fa7b') };
+    if (isPdf(path)) return { cls: 'pdf', label: 'PDF', icon: pageIcon('#ff5555') };
+    if (ext(path) === 'json') return { cls: 'json', label: 'JSON', icon: pageIcon('#8be9fd') };
+    if (isPreviewText(path)) return { cls: 'yaml', label: 'YAML', icon: pageIcon('#ff79c6') };
+    return { cls: 'md', label: 'Markdown', icon: pageIcon('#bd93f9') };
   }
 
   // ---------------------------------------------------------------- slugs (GitHub style)

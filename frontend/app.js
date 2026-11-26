@@ -256,11 +256,7 @@
         target = document.createElement('a');
         target.href = L.buildUrl(p, '');
         target.dataset.path = p;
-        var badge = document.createElement('span');
-        var fb = L.badgeFor(name);
-        badge.className = 'badge ' + fb.cls;
-        badge.textContent = fb.text;
-        target.appendChild(badge);
+        target.appendChild(makeBadge(name));
       }
       target.title = p;
       target.appendChild(document.createTextNode(name));
@@ -288,6 +284,17 @@
     renderFavorites();
   }
 
+  // The type icon of a file: an SVG in the type's colour; its name is the tooltip.
+  function makeBadge(path) {
+    var b = L.badgeFor(path);
+    var span = document.createElement('span');
+    span.className = 'badge ' + b.cls;
+    span.title = b.label;
+    span.setAttribute('aria-label', b.label);
+    span.innerHTML = b.icon; // a constant SVG from lib.js, never user input
+    return span;
+  }
+
   var FUZZY_LIMIT = 200;
 
   // Matches as a flat list, best first: the full path with the matched letters marked.
@@ -308,11 +315,7 @@
       a.href = L.buildUrl(r.path, '');
       a.dataset.path = r.path;
       a.title = r.path;
-      var badge = document.createElement('span');
-      var fuzzyBadge = L.badgeFor(r.path);
-      badge.className = 'badge ' + fuzzyBadge.cls;
-      badge.textContent = fuzzyBadge.text;
-      a.appendChild(badge);
+      a.appendChild(makeBadge(r.path));
       var cut = r.path.lastIndexOf('/') + 1;
       var hit = {};
       r.pos.forEach(function (x) { hit[x] = true; });
@@ -402,11 +405,7 @@
         a.href = L.buildUrl(e.path, '');
         a.dataset.path = e.path;
         a.title = e.path;
-        var badge = document.createElement('span');
-        var treeBadge = L.badgeFor(e.name);
-        badge.className = 'badge ' + treeBadge.cls;
-        badge.textContent = treeBadge.text;
-        a.appendChild(badge);
+        a.appendChild(makeBadge(e.name));
         a.appendChild(document.createTextNode(e.name));
         li.className = 'file-row';
         li.appendChild(a);

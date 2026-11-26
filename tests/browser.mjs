@@ -655,7 +655,7 @@ checks['AC-71'] = async (cdp) => {
 checks['AC-72'] = async (cdp) => {
   const p = await openPage(cdp, '/?file=README.md');
   try {
-    const badges = await p.ev("(function(){var o={};document.querySelectorAll('#tree a[data-path]').forEach(function(a){o[a.dataset.path]=(a.querySelector('.badge')||{}).textContent});return o})()");
+    const badges = await p.ev("(function(){var o={};document.querySelectorAll('#tree a[data-path]').forEach(function(a){o[a.dataset.path]=(a.querySelector('.badge')||{}).title});return o})()");
     const openCount = () => p.ev("document.querySelectorAll('#tree details[open]').length");
     // Folders are built when they open, so the count at load is only the open path to README.md.
     const total = await p.ev("document.querySelectorAll('#tree details').length");
@@ -677,7 +677,7 @@ checks['AC-72'] = async (cdp) => {
     await p.media('light');
     await p.goto('/?file=README.md'); await p.ready();
     const lightStroke = await p.ev("getComputedStyle(document.querySelector('#expand-all svg path')).stroke");
-    const ok = iconOk && darkStroke !== lightStroke && badges['README.md'] === 'MD' && badges['docs/flow.html'] === 'HTML' && badges['docs/architecture.md'] === 'MD'
+    const ok = iconOk && darkStroke !== lightStroke && badges['README.md'] === 'Markdown' && badges['docs/flow.html'] === 'HTML' && badges['docs/architecture.md'] === 'Markdown'
       && total >= 2 && afterCollapse === 0 && afterExpand === allFolders && closedAfterExpand === 0 && allFolders >= total && again === 0;
     return [ok, JSON.stringify({ badges: [badges['README.md'], badges['docs/flow.html']], total, allFolders, afterCollapse, afterExpand, closedAfterExpand, again, iconOk, darkStroke, lightStroke, icons })];
   } finally { await p.close(); }
@@ -692,7 +692,7 @@ checks['AC-73'] = async (cdp) => {
     await p.ev("document.getElementById('collapse-all').click(); true");
     await typeIn('arcmd');                      // letters in order, not a substring
     const f1 = await files();
-    const shape = await p.ev("(function(){var a=document.querySelector('#tree a[data-path]');return {text:a.textContent,marks:Array.from(a.querySelectorAll('mark')).map(function(m){return m.textContent}).join(''),flat:!document.querySelector('#tree details'),badge:(a.querySelector('.badge')||{}).textContent}})()");
+    const shape = await p.ev("(function(){var a=document.querySelector('#tree a[data-path]');return {text:a.textContent,marks:Array.from(a.querySelectorAll('mark')).map(function(m){return m.textContent}).join(''),flat:!document.querySelector('#tree details'),badge:(a.querySelector('.badge')||{}).title}})()");
     await typeIn('mda');                        // wrong order: nothing
     const wrongOrder = await p.ev("(document.querySelector('#tree .tree-empty')||{}).textContent");
     await typeIn('docs flow');                  // two words, all must match
@@ -709,7 +709,7 @@ checks['AC-73'] = async (cdp) => {
     await p.ev("document.activeElement && document.activeElement.blur(); true");
     await p.key('/', 'Slash', 191);
     const focused = await p.ev("document.activeElement && document.activeElement.id");
-    const ok = f1[0] === 'docs/architecture.md' && shape.text.includes('docs/architecture.md') && shape.marks.length >= 5 && shape.flat && shape.badge === 'MD'
+    const ok = f1[0] === 'docs/architecture.md' && shape.text.includes('docs/architecture.md') && shape.marks.length >= 5 && shape.flat && shape.badge === 'Markdown'
       && wrongOrder === 'No file name matches' && f2[0] === 'docs/flow.html' && none === 'No file name matches'
       && tree.details >= 2 && tree.open === 0 && !tree.flat && focused === 'search';
     return [ok, JSON.stringify({ f1: f1.slice(0, 3), shape, wrongOrder, f2: f2.slice(0, 2), none, tree, focused })];
@@ -1231,6 +1231,21 @@ checks['AC-102'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
+// ---- AC-103: each listed file type has its own SVG icon, in the type's colour, named by a tooltip
+checks['AC-103'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/'); await p.ready();
+    const icons = await q("(function(){var want={'README.md':['Markdown','#bd93f9'],'docs/flow.html':['HTML','#ffb86c'],'docs/pic.png':['Image','#50fa7b'],'docs/doc.pdf':['PDF','#ff5555'],'docs/data.json':['JSON','#8be9fd'],'docs/config.yaml':['YAML','#ff79c6']};var o={};Object.keys(want).forEach(function(path){var a=document.querySelector('#tree a[data-path=\"'+path+'\"]');var b=a&&a.querySelector('.badge');var sv=b&&b.querySelector('svg');var page=sv&&sv.querySelector('path');o[path]={title:b?b.title:null,svg:!!sv,text:b?b.textContent.trim():null,fill:page?page.getAttribute('fill'):null,want:want[path]}});return o})()");
+    const ok = Object.keys(icons).every((k) => {
+      const v = icons[k];
+      return v.svg && v.text === '' && v.title === v.want[0] && v.fill === v.want[1];
+    });
+    return [ok, JSON.stringify(icons)];
+  } finally { await p.close(); }
+};
+
 // ---- AC-101: pinned tabs stay put: first in the bar, no close button, never replaced, kept across a reload
 checks['AC-101'] = async (cdp) => {
   const p = await openPage(cdp, null);
@@ -1370,7 +1385,7 @@ checks['AC-95'] = async (cdp) => {
   try {
     const q = (e) => p.ev(e);
     await p.goto('/'); await p.ready();
-    const tree = await q("[...document.querySelectorAll('#tree a[data-path]')].filter(a => /pic\\.png$|doc\\.pdf$/.test(a.dataset.path)).map(a => ({ p: a.dataset.path, badge: (a.querySelector('.badge') || {}).textContent }))");
+    const tree = await q("[...document.querySelectorAll('#tree a[data-path]')].filter(a => /pic\\.png$|doc\\.pdf$/.test(a.dataset.path)).map(a => ({ p: a.dataset.path, badge: (a.querySelector('.badge') || {}).title }))");
     await p.goto('/?file=docs/pic.png'); await p.ready();
     await waitFor(() => p.ev("(function () { var i = document.querySelector('#preview img.media-image'); return !!i && i.complete && i.naturalWidth > 0; })()"), 5000, 50);
     const img = await q("(function () { var i = document.querySelector('#preview img.media-image'); return { w: i.naturalWidth, src: i.getAttribute('src').split('?')[0] }; })()");
@@ -1379,7 +1394,7 @@ checks['AC-95'] = async (cdp) => {
     const pdf = await q("(function () { var f = document.querySelector('#preview iframe.pdf-frame'); return { src: f.getAttribute('src'), wide: document.getElementById('preview').classList.contains('wide') }; })()");
     await waitFor(() => p.ev("!document.getElementById('fileinfo').hidden"), 5000, 50);
     const info = await q("!document.getElementById('fileinfo').hidden");
-    const ok = tree.some(t => t.p === 'docs/pic.png' && t.badge === 'IMG') && tree.some(t => t.p === 'docs/doc.pdf' && t.badge === 'PDF')
+    const ok = tree.some(t => t.p === 'docs/pic.png' && t.badge === 'Image') && tree.some(t => t.p === 'docs/doc.pdf' && t.badge === 'PDF')
       && img.w === 1 && img.src === '/files/docs/pic.png'
       && pdf.src === '/files/docs/doc.pdf' && pdf.wide && info;
     return [ok, JSON.stringify({ tree, img, pdf, info })];
@@ -1392,7 +1407,7 @@ checks['AC-98'] = async (cdp) => {
   try {
     const q = (e) => p.ev(e);
     await p.goto('/'); await p.ready();
-    const tree = await q("[...document.querySelectorAll('#tree a[data-path]')].filter(a => /data\\.json$|config\\.yaml$/.test(a.dataset.path)).map(a => ({ p: a.dataset.path, badge: (a.querySelector('.badge') || {}).textContent }))");
+    const tree = await q("[...document.querySelectorAll('#tree a[data-path]')].filter(a => /data\\.json$|config\\.yaml$/.test(a.dataset.path)).map(a => ({ p: a.dataset.path, badge: (a.querySelector('.badge') || {}).title }))");
     await p.goto('/?file=docs/data.json'); await p.ready();
     await waitFor(() => p.ev("!!document.querySelector('#preview pre.text-preview code')"), 5000, 50);
     const json = await q("(function () { var c = document.querySelector('#preview pre.text-preview code'); return { text: c.textContent, highlighted: c.querySelectorAll('span').length > 0, cls: c.className }; })()");
