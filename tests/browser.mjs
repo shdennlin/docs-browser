@@ -1211,6 +1211,50 @@ checks['AC-92'] = async (cdp) => {
 };
 
 // ---- AC-93: the file information bar links to the file in VS Code (href only, never clicked)
+// ---- AC-100: favorite files and folders, kept per root and listed above the tree
+checks['AC-100'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  const clearFavs = () => p.ev("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.favorites.') === 0).forEach(k => localStorage.removeItem(k)); true");
+  try {
+    const q = (e) => p.ev(e);
+    const click = (sel) => q(`(function(){var a=document.querySelector(${JSON.stringify(sel)});if(!a)return false;a.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0}));return true})()`);
+    const favList = () => q("Array.from(document.querySelectorAll('#fav-list li')).map(li => li.textContent.trim())");
+    const starPressed = (path) => q(`(document.querySelector('#tree .fav-btn[data-fav=${JSON.stringify(path)}]')||{getAttribute:()=>null}).getAttribute('aria-pressed')`);
+    const r = {};
+    await p.goto('/'); await p.ready();
+    await clearFavs();
+    await p.goto('/?file=README.md'); await p.ready();
+    r.emptyHidden = await q("document.getElementById('favorites').hidden");
+    // star a file row and a folder summary: both stars sit inside the tree
+    await click('#tree .file-row .fav-btn[data-fav="docs/code.md"]');
+    await click('#tree details[data-dir="docs"] > summary .fav-btn');
+    await waitFor(async () => (await starPressed('docs/code.md')) === 'true', 3000, 50);
+    r.stars = [await starPressed('docs/code.md'), await starPressed('docs')];
+    r.listed = await favList();
+    // a reload of the bare address keeps them, and the list is shown above the tree
+    await p.goto('/'); await p.ready();
+    await waitFor(async () => (await favList()).length === 2, 3000, 50);
+    r.afterReload = await favList();
+    r.shown = await q("!document.getElementById('favorites').hidden");
+    // the folder entry reveals its folder in the tree; the file entry opens the file
+    await q("(function(){var d=document.querySelector('#tree details[data-dir=\"docs\"]');if(d)d.open=false;return true})()");
+    await click('#fav-list .fav-folder');
+    await waitFor(async () => q("!!(document.querySelector('#tree details[data-dir=\"docs\"]')||{}).open"), 3000, 50);
+    await click('#fav-list a[data-path="docs/code.md"]');
+    await waitFor(async () => q("(document.querySelector('#tabs .tab.active')||{dataset:{}}).dataset.path === 'docs/code.md'"), 3000, 50);
+    r.opened = await q("(document.querySelector('#tabs .tab.active')||{dataset:{}}).dataset.path");
+    // unstarring from the list removes the entry and un-presses the tree star
+    await click('#fav-list .fav-btn[data-fav="docs/code.md"]');
+    await waitFor(async () => (await favList()).length === 1, 3000, 50);
+    r.afterUnstar = await favList();
+    r.treeStar = await starPressed('docs/code.md');
+    const ok = r.emptyHidden === true && r.stars[0] === 'true' && r.stars[1] === 'true' && r.listed.length === 2
+      && r.afterReload.length === 2 && r.shown === true && r.opened === 'docs/code.md'
+      && r.afterUnstar.length === 1 && r.afterUnstar[0].indexOf('docs') === 0 && r.treeStar === 'false';
+    return [ok, JSON.stringify(r)];
+  } finally { await clearFavs().catch(() => {}); await p.close(); }
+};
+
 // ---- AC-99: open tabs and the active file are remembered per root in localStorage
 checks['AC-99'] = async (cdp) => {
   const p = await openPage(cdp, null);

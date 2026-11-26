@@ -11,6 +11,8 @@
     missing: false,
     tree: [],
     treePaths: new Set(),
+    treeDirs: new Set(),  // every folder path of the tree
+    favs: new Set(),      // the favorites, read once per render
     truncated: false,
     current: null,
     token: 0,
@@ -185,13 +187,105 @@
 
   function setReady() { document.body.dataset.state = 'ready'; }
 
+  // ------------------------------------------------------------ favorites
+  // A file or a folder can be starred. The list is kept per served root in localStorage (key
+  // docs-browser.favorites.<rootKey>), as an array of paths in the order they were starred.
+  var FAV_PREFIX = 'docs-browser.favorites.';
+  function favKey() { return state.rootKey ? FAV_PREFIX + state.rootKey : null; }
+  function readFavorites() {
+    try {
+      var key = favKey();
+      var raw = key ? JSON.parse(localStorage.getItem(key) || '[]') : [];
+      if (!Array.isArray(raw)) return [];
+      return raw.filter(function (x, i) { return typeof x === 'string' && x !== '' && raw.indexOf(x) === i; });
+    } catch (e) { return []; }
+  }
+  function saveFavorites(list) {
+    var key = favKey();
+    if (!key) return;
+    try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) { /* storage may be off */ }
+  }
+  function setStar(btn, on) {
+    var p = btn.dataset.fav;
+    btn.textContent = on ? '★' : '☆';
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'Remove from favorites' : 'Add to favorites';
+    btn.setAttribute('aria-label', (on ? 'Remove from favorites: ' : 'Add to favorites: ') + p);
+  }
+  function starButton(path) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fav-btn';
+    btn.dataset.fav = path;
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation(); // a star inside a link or a folder summary does neither
+      toggleFavorite(path);
+    });
+    setStar(btn, state.favs.has(path));
+    return btn;
+  }
+  function toggleFavorite(path) {
+    var list = readFavorites();
+    var i = list.indexOf(path);
+    if (i === -1) list.push(path); else list.splice(i, 1);
+    saveFavorites(list);
+    state.favs = new Set(list);
+    Array.prototype.forEach.call(els.tree.querySelectorAll('.fav-btn'), function (b) {
+      if (b.dataset.fav === path) setStar(b, state.favs.has(path));
+    });
+    renderFavorites();
+  }
+  // Lists the favorites that still exist in the tree, in the order they were starred.
+  function renderFavorites() {
+    var box = $('#favorites'), ul = $('#fav-list');
+    clear(ul);
+    var shown = readFavorites().filter(function (p) { return state.treePaths.has(p) || state.treeDirs.has(p); });
+    box.hidden = shown.length === 0;
+    shown.forEach(function (p) {
+      var isDir = !state.treePaths.has(p);
+      var name = p.split('/').pop() + (isDir ? '/' : '');
+      var li = document.createElement('li');
+      var target;
+      if (isDir) {
+        target = document.createElement('button');
+        target.type = 'button';
+        target.className = 'fav-folder';
+        target.addEventListener('click', function () { revealFolder(p); });
+      } else {
+        target = document.createElement('a');
+        target.href = L.buildUrl(p, '');
+        target.dataset.path = p;
+        var badge = document.createElement('span');
+        var fb = L.badgeFor(name);
+        badge.className = 'badge ' + fb.cls;
+        badge.textContent = fb.text;
+        target.appendChild(badge);
+      }
+      target.title = p;
+      target.appendChild(document.createTextNode(name));
+      li.appendChild(target);
+      li.appendChild(starButton(p));
+      ul.appendChild(li);
+    });
+  }
+  // Opens every folder on the way to `dir` and the folder itself, then brings it into view.
+  function revealFolder(dir) {
+    L.ancestors(dir + '/_').forEach(function (d) { state.expanded.add(d); });
+    renderTree();
+    var d = els.tree.querySelector('details[data-dir="' + CSS.escape(dir) + '"]');
+    if (d) { d.scrollIntoView({ block: 'nearest' }); }
+  }
+
   // ------------------------------------------------------------ tree
   function renderTree() {
     clear(els.tree);
-    if (state.mode === 'names' && L.queryTokens(state.query).length) { renderFuzzy(); markSelected(false); return; }
+    state.favs = new Set(readFavorites());
+    if (state.mode === 'names' && L.queryTokens(state.query).length) { renderFuzzy(); markSelected(false); renderFavorites(); return; }
     els.tree.appendChild(buildList(state.tree, ''));
     markSelected(false); // a re-render must not re-open a folder the user closed
     saveExpanded();
+    renderFavorites();
   }
 
   var FUZZY_LIMIT = 200;
@@ -295,6 +389,7 @@
           });
           summary.appendChild(btn);
         });
+        summary.appendChild(starButton(dirPath)); // after the folder buttons, so the name and its buttons keep their gap
         details.appendChild(summary);
         if (state.expanded.has(dirPath)) fillChildren();
         li.appendChild(details);
@@ -309,7 +404,9 @@
         badge.textContent = treeBadge.text;
         a.appendChild(badge);
         a.appendChild(document.createTextNode(e.name));
+        li.className = 'file-row';
         li.appendChild(a);
+        li.appendChild(starButton(e.path));
       }
       ul.appendChild(li);
     });
@@ -384,7 +481,7 @@
   });
   function forgetExpanded() {
     try {
-      Object.keys(localStorage).filter(function (k) { return k.indexOf(EXPANDED_PREFIX) === 0 || k.indexOf(TABS_PREFIX) === 0; })
+      Object.keys(localStorage).filter(function (k) { return k.indexOf(EXPANDED_PREFIX) === 0 || k.indexOf(TABS_PREFIX) === 0 || k.indexOf(FAV_PREFIX) === 0; })
         .forEach(function (k) { localStorage.removeItem(k); });
     } catch (e) { /* storage may be off */ }
   }
@@ -394,6 +491,7 @@
     if (!res.ok) throw new Error('tree request failed: ' + res.status);
     state.tree = await res.json();
     state.treePaths = L.collectPaths(state.tree);
+    state.treeDirs = new Set(L.collectDirs(state.tree));
     if (!state.expandedReady) restoreExpanded();
     clear(els.treeBanners);
     state.truncated = res.headers.get('x-tree-truncated') === '1';
