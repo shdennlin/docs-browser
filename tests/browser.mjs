@@ -1152,10 +1152,6 @@ checks['AC-87'] = async (cdp) => {
     await p.goto('/?file=repo-demo/b.md'); await p.ready();
     await waitFor(() => p.ev("!!document.querySelector('#fileinfo .fi-dirty')"), 5000, 50);
     r.untracked = await bar();
-    // an HTML page also gets the bar, and the full-bleed page still fills the panel above it
-    await p.goto('/?file=docs/flow.html'); await p.ready();
-    await waitFor(() => p.ev("!document.getElementById('fileinfo').hidden"), 5000, 50);
-    r.html = await bar();
     // a change on disk refreshes the modified time
     await p.goto('/?file=repo-demo/b.md'); await p.ready();
     await waitFor(() => p.ev("!!document.querySelector('#fileinfo .fi-modified')"), 5000, 50);
@@ -1163,6 +1159,11 @@ checks['AC-87'] = async (cdp) => {
     await sleep(1100);
     r.refreshed = await withEdit('repo-demo/b.md', (c) => c + '\nchanged later\n', () =>
       waitFor(async () => (await q("(document.querySelector('#fileinfo .fi-modified')||{}).title||''")) !== before, 8000, 100));
+    // an HTML page also gets the bar, and the full-bleed page still fills the panel above it (loaded last:
+    // a navigation started while the previous page is still loading can stall the next page's fetches)
+    await p.goto('/?file=docs/flow.html');
+    await waitFor(() => p.ev("!!document.querySelector('iframe.html-frame') && !document.getElementById('fileinfo').hidden"), 8000, 50);
+    r.html = await bar();
     const c = r.committed, u = r.untracked;
     const ok = r.hiddenWithoutFile
       && !c.hidden && /Modified /.test(c.text) && c.branch.includes('trunk') && /Committed .* ago/.test(c.text)
