@@ -287,12 +287,14 @@
   // The type icon of a file: an SVG in the type's colour; its name is the tooltip.
   function makeBadge(path) {
     var b = L.badgeFor(path);
-    var span = document.createElement('span');
-    span.className = 'badge ' + b.cls;
-    span.title = b.label;
-    span.setAttribute('aria-label', b.label);
-    span.innerHTML = b.icon; // a constant SVG from lib.js, never user input
-    return span;
+    var img = document.createElement('img');
+    img.className = 'badge ' + b.cls;
+    img.src = b.src;
+    img.alt = '';
+    img.title = b.label;
+    img.width = 14;
+    img.height = 14;
+    return img;
   }
 
   var FUZZY_LIMIT = 200;

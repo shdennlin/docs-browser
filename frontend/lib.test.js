@@ -16,7 +16,7 @@ test('ut_28 media types and tree badges', () => {
   assert.equal(L.isPreviewText('ci.yml'), true);
   assert.equal(L.isPreviewText('a.txt'), false);
   assert.equal(L.badgeFor('data.json').label, 'JSON'); assert.equal(L.badgeFor('data.json').cls, 'json');
-  assert.equal(L.badgeFor('ci.yaml').label, 'YAML'); assert.equal(L.badgeFor('ci.yaml').cls, 'yaml'); assert.match(L.badgeFor('ci.yaml').icon, /<svg[^>]*>.*<path/);
+  assert.equal(L.badgeFor('ci.yaml').label, 'YAML'); assert.equal(L.badgeFor('ci.yaml').cls, 'yaml'); assert.equal(L.badgeFor('ci.yaml').src, '/icons/yaml.svg'); assert.equal(L.badgeFor('a.md').src, '/icons/markdown.svg');
   assert.equal(L.textLanguage('x.yml'), 'yaml');
   assert.equal(L.textLanguage('x.json'), 'json');
 });

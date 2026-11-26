@@ -776,7 +776,7 @@ checks['AC-75'] = async (cdp) => {
     await p.key('Escape', 'Escape', 27);
     const closed = await q("document.getElementById('settings').hidden");
     // folder icons: a closed and an open one
-    const icons = await q("(function(){var d=document.querySelector('#tree details[data-dir=\"docs\"]');var s=d.querySelector('summary');var m=function(){var c=getComputedStyle(s,'::before');return (c.maskImage&&c.maskImage!=='none'?c.maskImage:c.webkitMaskImage)||'none'};var o=d.open;d.open=false;var closed=m();d.open=true;var open=m();d.open=o;return {closedSet:closed!=='none',differs:closed!==open,w:getComputedStyle(s,'::before').width}})()");
+    const icons = await q("(function(){var d=document.querySelector('#tree details[data-dir=\"docs\"]');var s=d.querySelector('summary');var m=function(){return getComputedStyle(s,'::before').backgroundImage};var o=d.open;d.open=false;var closed=m();d.open=true;var open=m();d.open=o;return {closedSet:closed.indexOf('folder-base.svg')!==-1,openSet:open.indexOf('folder-open.svg')!==-1,differs:closed!==open,w:getComputedStyle(s,'::before').width}})()");
     // outline colours (dark) and the highlighted section while scrolling
     await p.media('dark');
     await p.goto('/?file=docs/outline.md'); await p.ready();
@@ -816,7 +816,7 @@ checks['AC-75'] = async (cdp) => {
       && pinned === 'block' && curStyle.shadow === 'none' && curStyle.border === '0px' && Number(curStyle.weight) >= 600 && curStyle.bg !== 'rgba(0, 0, 0, 0)' && hashAfter.length > 1 && docsOpen === true && docsClosed === 0
       && wrap0 !== 'nowrap' && wrap1 === 'nowrap' && dlg.open && dlg.wrapChecked === false && wide === 'none'
       && afterReset.wrap !== 'nowrap' && afterReset.max !== 'none' && closed === true
-      && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
+      && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.openSet && icons.differs && icons.w === '14px'
       && names.nowrap === 'nowrap' && names.textOverflow !== 'ellipsis' && names.clipped === false && names.title === 'docs/search-target.md' && names.hscroll === true && names.sl === 0
       && far.allIn === true && far.moved === true && far.tb === 8
       && adj.nameW < 90 && adj.actRight >= 0 && adj.actRight <= 2 && adj.faint >= 0.3 && adj.faint <= 0.4 && adj.title === 'docs' && rowStar === 1
@@ -1231,16 +1231,18 @@ checks['AC-102'] = async (cdp) => {
   } finally { await p.close(); }
 };
 
-// ---- AC-103: each listed file type has its own SVG icon, in the type's colour, named by a tooltip
+// ---- AC-103: each listed file type has its Material icon (an <img> of frontend/icons), named by a tooltip
 checks['AC-103'] = async (cdp) => {
   const p = await openPage(cdp, null);
   try {
     const q = (e) => p.ev(e);
     await p.goto('/'); await p.ready();
-    const icons = await q("(function(){var want={'README.md':['Markdown','#bd93f9'],'docs/flow.html':['HTML','#ffb86c'],'docs/pic.png':['Image','#50fa7b'],'docs/doc.pdf':['PDF','#ff5555'],'docs/data.json':['JSON','#8be9fd'],'docs/config.yaml':['YAML','#ff79c6']};var o={};Object.keys(want).forEach(function(path){var a=document.querySelector('#tree a[data-path=\"'+path+'\"]');var b=a&&a.querySelector('.badge');var sv=b&&b.querySelector('svg');var page=sv&&sv.querySelector('path');o[path]={title:b?b.title:null,svg:!!sv,text:b?b.textContent.trim():null,fill:page?page.getAttribute('fill'):null,want:want[path]}});return o})()");
+    const want = { 'README.md': ['Markdown', '/icons/markdown.svg'], 'docs/flow.html': ['HTML', '/icons/html.svg'], 'docs/pic.png': ['Image', '/icons/image.svg'], 'docs/doc.pdf': ['PDF', '/icons/pdf.svg'], 'docs/data.json': ['JSON', '/icons/json.svg'], 'docs/config.yaml': ['YAML', '/icons/yaml.svg'] };
+    await waitFor(() => q("Array.from(document.querySelectorAll('#tree img.badge')).length >= 6 && Array.from(document.querySelectorAll('#tree img.badge')).every(function(i){return i.complete})"), 5000, 50);
+    const icons = await q(`(function(){var want=${JSON.stringify(want)};var o={};Object.keys(want).forEach(function(path){var a=document.querySelector('#tree a[data-path="'+path+'"]');var img=a&&a.querySelector('img.badge');o[path]={title:img?img.title:null,src:img?img.getAttribute('src'):null,loaded:!!img&&img.complete&&img.naturalWidth>0,text:a?a.querySelector('.badge')&&a.querySelector('.badge').textContent.trim():null,want:want[path]}});return o})()`);
     const ok = Object.keys(icons).every((k) => {
       const v = icons[k];
-      return v.svg && v.text === '' && v.title === v.want[0] && v.fill === v.want[1];
+      return v.title === v.want[0] && v.src === v.want[1] && v.loaded && v.text === '';
     });
     return [ok, JSON.stringify(icons)];
   } finally { await p.close(); }
