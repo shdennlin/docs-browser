@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-14
+            target: macos-arm64
+          - os: ubuntu-22.04
+            target: linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: linux-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches Cargo.toml version
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [ "$want" != "$have" ]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $have"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package binary and checksum
+        env:
+          TAG: ${{ github.ref_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          name="docs-browser-${TAG}-${TARGET}"
+          cp target/release/docs-browser "$name"
+          shasum -a 256 "$name" > "$name.sha256"
+          cat "$name.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-browser-${{ github.ref_name }}-${{ matrix.target }}
+          path: docs-browser-${{ github.ref_name }}-${{ matrix.target }}*
+          if-no-files-found: error
+
+  release:
+    name: attach to release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: docs-browser-*
+          path: dist
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
