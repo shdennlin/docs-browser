@@ -795,11 +795,13 @@ checks['AC-75'] = async (cdp) => {
     await p.mouse('mousePressed', pt.x, pt.y); await p.mouse('mouseReleased', pt.x, pt.y);   // a real click
     await sleep(400);
     const names = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');var s=getComputedStyle(a);var sc=document.getElementById('side-scroll');return {nowrap:s.whiteSpace,textOverflow:s.textOverflow,clipped:a.scrollWidth>a.clientWidth,title:a.title,hscroll:sc.scrollWidth>sc.clientWidth,sl:sc.scrollLeft}})()");
+    // a hovered row shows its star in full (the mouse is still over the row after the click)
+    const rowStar = await q("(function(){var a=document.querySelector('#tree a[data-path=\"docs/search-target.md\"]');return Number(getComputedStyle(a.parentElement.querySelector('.fav-btn')).opacity)})()");
     // scrolled far to the right: every control of the toolbar is still in view and in place
     await q("document.getElementById('side-scroll').scrollLeft = 10000; true");
     const far = await q("(function(){var sb=document.getElementById('sidebar').getBoundingClientRect();var tb=document.getElementById('toolbar').getBoundingClientRect();var ok=Array.from(document.querySelectorAll('#search-row > *, #mode-row > button')).every(function(b){var r=b.getBoundingClientRect();return r.left>=sb.left-1&&r.right<=sb.right+1});return {allIn:ok,moved:document.getElementById('side-scroll').scrollLeft>0,tb:Math.round(tb.left-sb.left)}})()");
-    // the folder buttons sit right after the folder name, not at the far right
-    const adj = await q("(function(){var s=document.querySelector('#tree details[data-dir=\"docs\"] > summary');var n=s.querySelector('.folder-name').getBoundingClientRect();var b=s.querySelector('.folder-btn').getBoundingClientRect();return {nameW:Math.round(n.width),gap:Math.round(b.left-n.right),title:s.querySelector('.folder-name').title}})()");
+    // the row actions (expand, collapse, star) stay at the right edge of the scroll port while names scroll sideways, and rest faint
+    const adj = await q("(function(){var sc=document.getElementById('side-scroll');var s=document.querySelector('#tree details[data-dir=\"docs\"] > summary');var n=s.querySelector('.folder-name').getBoundingClientRect();var acts=s.querySelector('.row-actions').getBoundingClientRect();var vr=sc.getBoundingClientRect().left+sc.clientWidth;return {nameW:Math.round(n.width),actRight:Math.round(vr-acts.right),faint:Number(getComputedStyle(s.querySelector('.folder-btn')).opacity),title:s.querySelector('.folder-name').title}})()");
     // the outer panel must never scroll (a browser may do it on focus); it snaps back at once
     const outerBefore = await q("(function(){var s=document.getElementById('sidebar');var d=document.createElement('div');d.id='probe-wide';d.style.cssText='width:2000px;height:1px';s.appendChild(d);s.scrollLeft=60;return s.scrollLeft})()");
     await sleep(100);
@@ -817,10 +819,10 @@ checks['AC-75'] = async (cdp) => {
       && colours[0] === 'l1 current:rgb(255, 85, 85)' && colours[1] === 'l2:rgb(255, 184, 108)' && spy.n === 1 && spy.text === spy.want && icons.closedSet && icons.differs && icons.w === '14px'
       && names.nowrap === 'nowrap' && names.textOverflow !== 'ellipsis' && names.clipped === false && names.title === 'docs/search-target.md' && names.hscroll === true && names.sl === 0
       && far.allIn === true && far.moved === true && far.tb === 8
-      && adj.nameW < 90 && adj.gap >= 0 && adj.gap <= 10 && adj.title === 'docs'
+      && adj.nameW < 90 && adj.actRight >= 0 && adj.actRight <= 2 && adj.faint >= 0.3 && adj.faint <= 0.4 && adj.title === 'docs' && rowStar === 1
       && outerBefore > 0 && outerLeft === 0
       && full.dw <= 1 && full.dl === 0 && full.dt === 0 && full.outlineHidden === true;
-    return [ok, JSON.stringify({ outline, pinned, curStyle, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, outerLeft, names, far, adj, icons, full })];
+    return [ok, JSON.stringify({ outline, pinned, curStyle, hashAfter, docsOpen, docsClosed, wrap0, wrap1, dlg, wide, afterReset, closed, tops, colours, spy, outerLeft, names, far, adj, rowStar, icons, full })];
   } finally { await p.close(); }
 };
 
@@ -1136,6 +1138,8 @@ checks['AC-87'] = async (cdp) => {
     const bar = () => q(`(function(){var b=document.getElementById('fileinfo');return {hidden:b.hidden,text:b.innerText,inside:(function(){var r=b.getBoundingClientRect(),m=document.getElementById('main').getBoundingClientRect();return r.top>=m.bottom-1&&r.bottom<=innerHeight+0.5})(),
       modified:(b.querySelector('.fi-modified')||{}).title||'',branch:(b.querySelector('.fi-branch')||{}).textContent||'',dirty:!!b.querySelector('.fi-dirty')}})()`);
     const r = {};
+    await p.goto('/'); await p.ready();
+    await q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).forEach(k => localStorage.removeItem(k)); true"); // a bare address reopens remembered tabs (AC-99)
     await p.goto('/'); await p.ready();
     r.hiddenWithoutFile = (await bar()).hidden;
     // committed file in a real repository

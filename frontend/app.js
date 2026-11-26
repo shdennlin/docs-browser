@@ -373,6 +373,10 @@
         nameSpan.textContent = e.name;
         nameSpan.title = dirPath;
         summary.appendChild(nameSpan);
+        // expand, collapse and star sit in one group at the right edge; it stays in view when names scroll sideways
+        var actions = document.createElement('span');
+        actions.className = 'row-actions';
+        summary.appendChild(actions);
         [['expand', ICON_EXPAND, 'Open this folder and everything in it'], ['collapse', ICON_COLLAPSE, 'Close this folder and everything in it']].forEach(function (b) {
           var btn = document.createElement('button');
           btn.type = 'button';
@@ -387,9 +391,9 @@
             sub.forEach(function (d) { if (b[0] === 'expand') state.expanded.add(d); else state.expanded.delete(d); });
             renderTree();
           });
-          summary.appendChild(btn);
+          actions.appendChild(btn);
         });
-        summary.appendChild(starButton(dirPath)); // after the folder buttons, so the name and its buttons keep their gap
+        actions.appendChild(starButton(dirPath));
         details.appendChild(summary);
         if (state.expanded.has(dirPath)) fillChildren();
         li.appendChild(details);
@@ -406,7 +410,10 @@
         a.appendChild(document.createTextNode(e.name));
         li.className = 'file-row';
         li.appendChild(a);
-        li.appendChild(starButton(e.path));
+        var fileActions = document.createElement('span');
+        fileActions.className = 'row-actions';
+        fileActions.appendChild(starButton(e.path));
+        li.appendChild(fileActions);
       }
       ul.appendChild(li);
     });

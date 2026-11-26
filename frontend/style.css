@@ -80,9 +80,8 @@ body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "N
 /* Favorites: a star per file row and folder summary, shown on hover or when starred; the list above the tree */
 #tree li.file-row { display: flex; align-items: center; gap: 2px; }
 #tree li.file-row > a { flex: 1 0 auto; } /* never narrower than its name, as before the star: nowrap names scroll */
-.fav-btn { flex: none; width: 1.4em; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; visibility: hidden; }
-.fav-btn.on { visibility: visible; color: var(--link); }
-#tree li.file-row:hover > .fav-btn, #tree summary:hover .fav-btn, #tree summary:focus-within .fav-btn, .fav-btn:focus-visible { visibility: visible; }
+.fav-btn { flex: none; width: 1.4em; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; }
+.fav-btn.on { color: var(--link); }
 .fav-btn:hover { color: var(--fg); }
 #favorites { margin: 0 0 8px; padding: 0 0 6px; border-bottom: 1px solid var(--border); }
 #favorites .fav-title { margin: 2px 4px 4px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; border: 0; padding: 0; }
@@ -188,8 +187,12 @@ body.resizing iframe { pointer-events: none; }
 /* folder buttons */
 #tree summary { display: flex; align-items: center; gap: 4px; }
 #tree summary .folder-name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.folder-btn { visibility: hidden; font-size: 11px; line-height: 1; padding: 1px 4px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
-#tree summary:hover .folder-btn, #tree summary:focus-within .folder-btn { visibility: visible; }
+.folder-btn { font-size: 11px; line-height: 1; padding: 1px 4px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+/* Row actions (expand, collapse, star): always there but faint; the row or the button itself shows them in full.
+   The group is sticky to the right edge, so it stays in view while names scroll sideways (nowrap). */
+.row-actions { flex: none; display: flex; align-items: center; gap: 3px; margin-left: auto; position: sticky; right: 0; background: var(--bg); }
+.row-actions > .folder-btn, .row-actions > .fav-btn { opacity: .35; transition: opacity .15s; }
+#tree summary:hover .row-actions > *, #tree li.file-row:hover > .row-actions > *, .row-actions > .fav-btn.on, .row-actions > *:hover, .row-actions > *:focus-visible { opacity: 1; }
 .folder-btn:hover { background: var(--hover); color: var(--fg); }
 
 /* outline: floating on the right, opens on hover, can be pinned open */
