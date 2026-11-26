@@ -1,0 +1,10 @@
+{
+  "notebook": "Work log",
+  "exported": "2026-11-23T18:00:00Z",
+  "notes": [
+    { "id": 1, "title": "Sync design", "tags": ["design", "sync"], "words": 412 },
+    { "id": 2, "title": "Release checklist", "tags": ["release"], "words": 138 },
+    { "id": 3, "title": "Reading list", "tags": [], "words": 56 }
+  ],
+  "stats": { "total": 3, "encrypted": true, "lastSync": null }
+}

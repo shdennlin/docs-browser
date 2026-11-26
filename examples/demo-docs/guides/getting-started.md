@@ -24,8 +24,10 @@ print(note.id)
 | `port` | `8080` | HTTP port |
 | `data_dir` | `~/notes` | Where notes are stored |
 | `sync` | `false` | Enable background sync |
+| `encryption` | `on` | Encrypt note bodies ([ADR 0002](../adr/0002-end-to-end-encryption.md)) |
 
 ## Next steps
 
 - [ ] Read the [architecture overview](../architecture/overview.md)
+- [ ] Save your recovery kit somewhere safe
 - [x] Install the CLI

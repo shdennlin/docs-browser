@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="160" viewBox="0 0 480 160">
+  <rect width="480" height="160" rx="12" fill="#f4f1fb"/>
+  <g font-family="sans-serif" font-size="14" text-anchor="middle">
+    <rect x="20" y="56" width="110" height="48" rx="8" fill="#8b5cf6"/>
+    <text x="75" y="85" fill="#fff">Web client</text>
+    <rect x="185" y="56" width="110" height="48" rx="8" fill="#6c3fd1"/>
+    <text x="240" y="85" fill="#fff">API server</text>
+    <rect x="350" y="20" width="110" height="48" rx="8" fill="#ec4899"/>
+    <text x="405" y="49" fill="#fff">Sync worker</text>
+    <rect x="350" y="92" width="110" height="48" rx="8" fill="#168a4b"/>
+    <text x="405" y="121" fill="#fff">Object storage</text>
+  </g>
+  <g stroke="#6b6585" stroke-width="2" fill="none">
+    <line x1="130" y1="80" x2="185" y2="80"/>
+    <line x1="295" y1="80" x2="350" y2="44"/>
+    <line x1="295" y1="80" x2="350" y2="116"/>
+  </g>
+</svg>

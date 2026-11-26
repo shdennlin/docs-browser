@@ -16,23 +16,27 @@
   .bar i { display: block; height: 14px; border-radius: 7px; background: linear-gradient(90deg, #8b5cf6, #ec4899); }
   .bar em { width: 90px; font-style: normal; color: #6b6585; }
   .ok { color: #168a4b; font-weight: 600; }
+  .warn { color: #b45309; font-weight: 600; }
 </style>
 </head>
 <body>
   <h1>Acme Notes status</h1>
   <p class="sub">Fictional demo page &middot; plain HTML and CSS, rendered in a sandboxed frame</p>
   <div class="grid">
-    <div class="card"><b>1,284</b><span>Notes stored</span></div>
-    <div class="card"><b>42 ms</b><span>Median search time</span></div>
+    <div class="card"><b>12,806</b><span>Notes stored</span></div>
+    <div class="card"><b>38 ms</b><span>Median search time</span></div>
     <div class="card"><b class="ok">Healthy</b><span>Sync worker</span></div>
+    <div class="card"><b>3</b><span>Open conflicts</span></div>
+    <div class="card"><b>1.8 GB</b><span>Encrypted storage</span></div>
+    <div class="card"><b class="warn">2 pending</b><span>Offline writes queued</span></div>
   </div>
   <div class="panel">
     <h3 style="margin-top:0">Notes created per weekday</h3>
-    <div class="bar"><em>Monday</em><i style="width:62%"></i></div>
-    <div class="bar"><em>Tuesday</em><i style="width:78%"></i></div>
-    <div class="bar"><em>Wednesday</em><i style="width:91%"></i></div>
-    <div class="bar"><em>Thursday</em><i style="width:70%"></i></div>
-    <div class="bar"><em>Friday</em><i style="width:48%"></i></div>
+    <div class="bar"><em>Monday</em><i style="width:58%"></i></div>
+    <div class="bar"><em>Tuesday</em><i style="width:83%"></i></div>
+    <div class="bar"><em>Wednesday</em><i style="width:94%"></i></div>
+    <div class="bar"><em>Thursday</em><i style="width:72%"></i></div>
+    <div class="bar"><em>Friday</em><i style="width:51%"></i></div>
   </div>
 </body>
 </html>

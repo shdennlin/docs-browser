@@ -9,9 +9,10 @@ We need fast full-text search over thousands of notes without running a separate
 
 ## Decision
 
-Store the search index in a single SQLite file next to the notes.
+Store the search index in a single SQLite file next to the notes, using the FTS5 extension.
 
 ## Consequences
 
 - Zero-config deployment.
 - Single-writer limit is acceptable for a personal tool.
+- See [ADR 0002](0002-end-to-end-encryption.md): the index holds titles only once bodies are encrypted.
