@@ -384,7 +384,7 @@
   });
   function forgetExpanded() {
     try {
-      Object.keys(localStorage).filter(function (k) { return k.indexOf(EXPANDED_PREFIX) === 0; })
+      Object.keys(localStorage).filter(function (k) { return k.indexOf(EXPANDED_PREFIX) === 0 || k.indexOf(TABS_PREFIX) === 0; })
         .forEach(function (k) { localStorage.removeItem(k); });
     } catch (e) { /* storage may be off */ }
   }
@@ -752,11 +752,28 @@
 
   // ------------------------------------------------------------ tabs (PRD 7.5)
   var tabsEl = $('#tabs');
-  var TABS_KEY = 'docs-browser.tabs';
+  var TABS_PREFIX = 'docs-browser.tabs.';
   var EXPANDED_PREFIX = 'docs-browser.expanded.';
 
+  // The open tabs and the active one are kept per served root (the server's rootKey), in this browser's
+  // localStorage: a restart of the server or of the browser opens the same files again.
+  function tabsKey() { return state.rootKey ? TABS_PREFIX + state.rootKey : null; }
   function saveTabs() {
-    try { sessionStorage.setItem(TABS_KEY, JSON.stringify(state.tabs.map(function (t) { return t.path; }))); } catch (e) { /* storage may be off */ }
+    var key = tabsKey();
+    if (!key) return;
+    var active = state.active >= 0 && state.tabs[state.active] ? state.tabs[state.active].path : null;
+    try { localStorage.setItem(key, JSON.stringify({ tabs: state.tabs.map(function (t) { return t.path; }), active: active })); } catch (e) { /* storage may be off */ }
+  }
+  // Stored paths that still exist in the tree are kept (all of them when the tree is not known).
+  function readTabs() {
+    var none = { tabs: [], active: null };
+    try {
+      var key = tabsKey();
+      var raw = key ? JSON.parse(localStorage.getItem(key) || 'null') : null;
+      if (!raw || typeof raw !== 'object') return none;
+      var known = function (x) { return typeof x === 'string' && (!state.treePaths.size || state.treePaths.has(x)); };
+      return { tabs: Array.isArray(raw.tabs) ? raw.tabs.filter(known) : [], active: known(raw.active) ? raw.active : null };
+    } catch (e) { return none; }
   }
 
   function tabLabel(path) {
@@ -1444,15 +1461,14 @@
     } catch (e) {
       banner('Server unreachable, retrying');
     }
-    try {
-      var saved = JSON.parse(sessionStorage.getItem(TABS_KEY) || '[]');
-      if (Array.isArray(saved)) {
-        state.tabs = saved.filter(function (x) { return typeof x === 'string' && (!state.treePaths.size || state.treePaths.has(x)); })
-          .map(function (x) { return { path: x, scroll: 0 }; });
-        state.active = -1;
-      }
-    } catch (e) { /* ignore a damaged list */ }
+    var stored = readTabs();
+    state.tabs = stored.tabs.map(function (x) { return { path: x, scroll: 0 }; });
+    state.active = -1;
     var loc = L.parseLocation(location.search, location.hash);
-    await showFile(loc.file, loc.hash);
+    var file = loc.file, hash = loc.hash;
+    // A file named in the address (a file argument, a link) wins; a bare address reopens the file that
+    // was active last time in this root.
+    if (!file && stored.active) { file = stored.active; hash = ''; history.replaceState({}, '', L.buildUrl(file, '')); }
+    await showFile(file, hash);
   })();
 })();

@@ -907,6 +907,8 @@ checks['AC-78'] = async (cdp) => {
   try {
     const q = (e) => p.ev(e);
     await p.goto('/'); await p.ready();
+    await q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).forEach(k => localStorage.removeItem(k)); true"); // a bare address reopens remembered tabs (AC-99)
+    await p.goto('/'); await p.ready();
     const hiddenWithoutFile = await q("document.getElementById('copy-name').hidden");
     await p.goto('/?file=docs/subdir/rel.md'); await p.ready();
     await q("window.__copied = []; Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied.push(t); return Promise.resolve(); } }, configurable: true }); true");
@@ -1209,6 +1211,33 @@ checks['AC-92'] = async (cdp) => {
 };
 
 // ---- AC-93: the file information bar links to the file in VS Code (href only, never clicked)
+// ---- AC-99: open tabs and the active file are remembered per root in localStorage
+checks['AC-99'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  const clearTabs = () => p.ev("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).forEach(k => localStorage.removeItem(k)); true");
+  try {
+    const q = (e) => p.ev(e);
+    const tabs = () => q("Array.from(document.querySelectorAll('#tabs .tab')).map(function(t){return (t.classList.contains('active')?'*':'')+t.dataset.path})");
+    const activePath = () => q("(document.querySelector('#tabs .tab.active')||{dataset:{}}).dataset.path || null");
+    const r = {};
+    await p.goto('/'); await p.ready(); // localStorage is only readable on the served origin
+    await clearTabs();
+    await p.goto('/?file=README.md'); await p.ready();
+    // a command-click opens docs/code.md in a tab of its own, so two tabs with the second active
+    await q("document.querySelector('#tree a[data-path=\"docs/code.md\"]').dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,button:0,ctrlKey:true})); true");
+    await waitFor(async () => (await activePath()) === 'docs/code.md', 5000, 50);
+    r.before = await tabs();
+    // a bare address (a restart) reopens the active file with both tabs
+    await p.goto('/'); await p.ready();
+    const restored = await waitFor(async () => (await activePath()) === 'docs/code.md', 5000, 50);
+    r.after = await tabs();
+    r.location = await q("location.pathname + location.search");
+    r.stored = await q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).length");
+    const ok = !!restored && r.before.length === 2 && r.after.length === 2 && r.after.includes('*docs/code.md') && r.after.includes('README.md') && r.stored === 1;
+    return [ok, JSON.stringify(r)];
+  } finally { await clearTabs().catch(() => {}); await p.close(); }
+};
+
 checks['AC-93'] = async (cdp) => {
   const p = await openPage(cdp, null);
   try {
@@ -1288,8 +1317,12 @@ checks['AC-90'] = async (cdp) => {
 
 // ---- AC-81: in-page tabs
 checks['AC-81'] = async (cdp) => {
-  const p = await openPage(cdp, '/?file=README.md');
+  const p = await openPage(cdp, null);
   try {
+    // remembered tabs (AC-99) live in localStorage of the origin: start from none
+    await p.goto('/'); await p.ready();
+    await p.ev("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).forEach(k => localStorage.removeItem(k)); true");
+    await p.goto('/?file=README.md'); await p.ready();
     const q = (e) => p.ev(e);
     const tabs = () => q("Array.from(document.querySelectorAll('#tabs .tab')).map(function(t){return (t.classList.contains('active')?'*':'')+t.dataset.path})");
     const h1 = () => q("(document.querySelector('#preview h1')||{}).textContent");
@@ -1361,6 +1394,8 @@ checks['AC-82'] = async (cdp) => {
   const p = await openPage(cdp, null);
   try {
     const q = (e) => p.ev(e);
+    await p.goto('/'); await p.ready(); // a bare address reopens remembered tabs (AC-99): start from none
+    await q("Object.keys(localStorage).filter(k => k.indexOf('docs-browser.tabs.') === 0).forEach(k => localStorage.removeItem(k)); true");
     await p.media('light');
     await p.goto('/?file=docs/outline.md'); await p.ready();
     await q("window.__copied = []; Object.defineProperty(navigator, 'clipboard', { value: { writeText: function (t) { window.__copied.push(t); return Promise.resolve(); } }, configurable: true }); true");
