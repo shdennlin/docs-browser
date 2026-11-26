@@ -1218,6 +1218,19 @@ checks['AC-92'] = async (cdp) => {
 };
 
 // ---- AC-93: the file information bar links to the file in VS Code (href only, never clicked)
+// ---- AC-102: the page has an icon: a set of file types (the favicon)
+checks['AC-102'] = async (cdp) => {
+  const p = await openPage(cdp, null);
+  try {
+    const q = (e) => p.ev(e);
+    await p.goto('/'); await p.ready();
+    const link = await q("(function(){var l=document.querySelector('link[rel~=icon]');return l?{href:l.getAttribute('href'),type:l.getAttribute('type')}:null})()");
+    const res = await q("fetch('/favicon.svg').then(function(r){return {status:r.status,type:r.headers.get('content-type'),text:r.text()}}).then(function(o){return o.text.then(function(t){return {status:o.status,type:o.type,svg:t.indexOf('<svg')===0,fills:(t.match(/fill=\"#[0-9a-f]{6}\"/g)||[]).length}})})");
+    const ok = !!link && link.href === '/favicon.svg' && res.status === 200 && /image\/svg\+xml/.test(res.type || '') && res.svg && res.fills >= 4;
+    return [ok, JSON.stringify({ link, res })];
+  } finally { await p.close(); }
+};
+
 // ---- AC-101: pinned tabs stay put: first in the bar, no close button, never replaced, kept across a reload
 checks['AC-101'] = async (cdp) => {
   const p = await openPage(cdp, null);
